@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+
+    <string name="interruption_level_none_with_warning">Повна тиша. Це також вимкне звук екранних дикторів.</string>
+    <string name="interruption_level_priority">Тільки пріоритетні</string>
+    <string name="interruption_level_alarms">Тільки будильники</string>
+    <string name="interruption_level_none_twoline">Повна
+        тиша</string>
+    <string name="interruption_level_priority_twoline">Тільки
+        пріоритетні</string>
+    <string name="interruption_level_alarms_twoline">Тільки
+        будильники</string>
+
+    <string name="status_deep_sleep">(Глибокий сон: %1$d%2$s)</string>
+</resources>

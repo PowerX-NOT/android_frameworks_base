@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2025 DerpFest
+    SPDX-License-Identifier: Apache-2.0
+-->
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+
+    <string name="volume_dialog_ringer_guidance_normal">Дзвінки та сповіщення будуть звучати</string>
+
+    <string name="aerr_copy">Скопіювати URL-адресу логу збою</string>
+    <string name="url_copy_success">URL-адресу успішно скопійовано</string>
+    <string name="url_copy_failed">Виникла помилка під час завантаження журналу в mkr/bin</string>
+
+    <string name="gesture_locked_warning">Проведіть пальцем ще раз, щоб розблокувати жести</string>
+
+    <string name="pocket_lock_message_long_press">Натисніть і утримуйте кнопку живлення, щоб розблокувати</string>
+    <string name="pocket_view_title">Режим "у кишені" увімкнено</string>
+    <string name="pocket_view_title_cancel">Звільніть виділену верхню частину пристрою або натисніть і утримуйте кнопку живлення, щоб примусово вийти з режиму "у кишені"</string>
+</resources>
