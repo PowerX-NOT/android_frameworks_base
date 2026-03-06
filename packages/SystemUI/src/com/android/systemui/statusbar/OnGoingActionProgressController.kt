@@ -70,6 +70,7 @@ class OnGoingActionProgressController(
 
     private val iconCache = HashMap<String, Drawable>()
     private val inFlightIconLoads = ConcurrentHashMap<String, Job>()
+    private val pendingIconCallbacks = ConcurrentHashMap<String, MutableList<(Drawable?) -> Unit>>()
 
     private var showMediaProgress = true
     private var isTrackingProgress = false
@@ -513,8 +514,12 @@ class OnGoingActionProgressController(
             return
         }
 
-        if (inFlightIconLoads.containsKey(packageName)) return
+        if (inFlightIconLoads.containsKey(packageName)) {
+            pendingIconCallbacks.getOrPut(packageName) { mutableListOf() }.add(onLoaded)
+            return
+        }
 
+        pendingIconCallbacks[packageName] = mutableListOf(onLoaded)
         val job = mainScope.launch {
             val drawable = withContext(bgDispatcher) {
                 fetchPackageIcon(packageName)
@@ -524,11 +529,16 @@ class OnGoingActionProgressController(
             drawable.setBounds(0, 0, sizePx, sizePx)
 
             iconCache[packageName] = drawable
-            onLoaded(drawable)
+            pendingIconCallbacks.remove(packageName)?.forEach { it(drawable) }
         }
 
         inFlightIconLoads[packageName] = job
-        job.invokeOnCompletion { inFlightIconLoads.remove(packageName) }
+        job.invokeOnCompletion {
+            inFlightIconLoads.remove(packageName)
+            if (it != null) {
+                pendingIconCallbacks.remove(packageName)?.forEach { cb -> cb(null) }
+            }
+        }
     }
 
     private fun extractProgress(notification: Notification) {
@@ -884,6 +894,7 @@ class OnGoingActionProgressController(
         iconCache.clear()
         inFlightIconLoads.values.forEach { it.cancel() }
         inFlightIconLoads.clear()
+        pendingIconCallbacks.clear()
 
         currentIcon = null
         currentTrackTitle = null
