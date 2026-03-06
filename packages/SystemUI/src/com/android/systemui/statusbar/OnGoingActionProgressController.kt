@@ -48,6 +48,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
@@ -71,6 +73,7 @@ class OnGoingActionProgressController(
     private val iconCache = HashMap<String, Drawable>()
     private val inFlightIconLoads = ConcurrentHashMap<String, Job>()
     private val pendingIconCallbacks = ConcurrentHashMap<String, MutableList<(Drawable?) -> Unit>>()
+    private val notificationLock = Mutex()
 
     private var showMediaProgress = true
     private var isTrackingProgress = false
@@ -776,37 +779,41 @@ class OnGoingActionProgressController(
     override fun onNotificationRankingUpdate(rankingMap: NotificationListenerService.RankingMap?) = Unit
     override fun onNotificationsInitialized() = Unit
 
-    private fun handleNotificationPosted(sbn: StatusBarNotification) {
+    private suspend fun handleNotificationPosted(sbn: StatusBarNotification) {
         if (!isEnabled) return
         val notification = sbn.notification ?: return
 
-        val hasValidProgress = hasProgress(notification)
-        val currentKey = trackedNotificationKey
+        notificationLock.withLock {
+            val hasValidProgress = hasProgress(notification)
+            val currentKey = trackedNotificationKey
 
-        if (!hasValidProgress) {
-            if (currentKey != null && currentKey == sbn.key) clearProgressTracking()
-            return
-        }
+            if (!hasValidProgress) {
+                if (currentKey != null && currentKey == sbn.key) clearProgressTracking()
+                return
+            }
 
-        if (!isTrackingProgress) {
-            trackProgress(sbn)
-        } else if (sbn.key == currentKey) {
-            updateProgressIfNeeded(sbn)
+            if (!isTrackingProgress) {
+                trackProgress(sbn)
+            } else if (sbn.key == currentKey) {
+                updateProgressIfNeeded(sbn)
+            }
         }
     }
 
-    private fun handleNotificationRemoved(sbn: StatusBarNotification) {
-        if (!isTrackingProgress) return
+    private suspend fun handleNotificationRemoved(sbn: StatusBarNotification) {
+        notificationLock.withLock {
+            if (!isTrackingProgress) return
 
-        if (sbn.key == trackedNotificationKey) {
-            clearProgressTracking()
-            return
-        }
-
-        if (sbn.packageName == trackedPackageName) {
-            val current = trackedNotificationKey?.let { findNotificationByKey(it) }
-            if (current == null || !hasProgress(current.notification)) {
+            if (sbn.key == trackedNotificationKey) {
                 clearProgressTracking()
+                return
+            }
+
+            if (sbn.packageName == trackedPackageName) {
+                val current = trackedNotificationKey?.let { findNotificationByKey(it) }
+                if (current == null || !hasProgress(current.notification)) {
+                    clearProgressTracking()
+                }
             }
         }
     }
