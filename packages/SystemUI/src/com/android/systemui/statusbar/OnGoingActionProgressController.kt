@@ -114,6 +114,8 @@ class OnGoingActionProgressController(
 
     private var lastUpdateTime = 0L
     private var uiUpdateJob: Job? = null
+    @Volatile
+    private var uiUpdateGeneration = 0L
 
     private var mediaProgressJob: Job? = null
     private var finishedProgressTimeoutJob: Job? = null
@@ -258,6 +260,7 @@ class OnGoingActionProgressController(
 
     private fun requestUiUpdate() {
         val now = System.currentTimeMillis()
+        val generation = ++uiUpdateGeneration
 
         uiUpdateJob?.cancel()
         uiUpdateJob = mainScope.launch {
@@ -265,6 +268,7 @@ class OnGoingActionProgressController(
             if (elapsed <= DEBOUNCE_DELAY_MS) {
                 delay(DEBOUNCE_DELAY_MS)
             }
+            if (generation != uiUpdateGeneration) return@launch
             lastUpdateTime = System.currentTimeMillis()
             updateViews()
         }
