@@ -702,8 +702,9 @@ private fun progressFraction(state: ProgressState): Float =
     else 0f
 
 private fun formatMs(ms: Long): String {
-    if (ms <= 0) return "0:00"
-    val s = ms / 1000
+    val safeMs = ms.coerceAtLeast(0)
+    if (safeMs == 0L) return "0:00"
+    val s = safeMs / 1000
     return "${s / 60}:${(s % 60).toString().padStart(2, '0')}"
 }
 
