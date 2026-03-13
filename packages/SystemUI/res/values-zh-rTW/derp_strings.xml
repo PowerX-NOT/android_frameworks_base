@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: DerpFest AOSP
+     SPDX-License-Identifier: Apache-2.0
+-->
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+
+    <!-- Auto reboot Suggestion/Reminder -->
+    <string name="notification_channel_reboot_suggestion">重新啟動建議</string>
+    <string name="notification_channel_reboot_suggestion_description">重新啟動建議的通知</string>
+    <string name="reboot_suggestion_title">重新啟動提醒</string>
+    <string name="reboot_suggestion_description">您的裝置已連續運作超過一週，建議重新啟動。</string>
+    <string name="reboot_suggestion_now">重新啟動</string>
+
+    <!-- Label for current user in power menu options dialog -->
+    <string name="global_action_restart_systemui">SystemUI</string>
+
+    <!-- Face unlock -->
+    <string name="face_unlock_recognizing">正在識別臉部...</string>
+
+    <!-- Internet -->
+    <string name="status_bar_settings_network_speed">網路速度</string>
+    <string name="status_bar_network_speed">network_speed</string>
+
+    <!-- QuickSettings: InternetDialog: Summary for how many devices are connected to the hotspot [CHAR LIMIT=NONE] -->
+    <plurals name="quick_settings_internet_hotspot_summary_num_devices">
+        <item quantity="one">%d 個裝置已連線</item>
+        <item quantity="other">%d 個裝置已連線</item>
+    </plurals>
+
+    <!-- Name of the nfc status bar icon. -->
+    <string name="status_bar_nfc">NFC</string>
+
+    <!-- Smartspace -->
+    <string name="accessibility_next_alarm">下一個鬧鐘於 %s</string>
+    <string name="accessibility_smartspace_page">第 %1$d 頁，共 %2$d 頁</string>
+    <string name="active_mode_content_description">%1$s 已開啟</string>
+    <string name="generic_smartspace_concatenated_desc">%1$s, %2$s</string>
+    <string name="music_controls_no_title">無標題</string>
+    <string name="smartspace_content_desc">At a glance (一覽)</string>
+    <string name="smartspace_flight_qr_code">QR Code</string>
+    <string name="smartspace_icu_date_pattern">EEEMMMd</string>
+    <string name="smartspace_role_desc">檢視</string>
+
+    <!-- Name of the roaming status bar icon. -->
+    <string name="status_bar_roaming">漫遊指示器</string>
+
+    <!-- Name of the HD calling status bar icon. -->
+    <string name="status_bar_hd_calling">HD 通話 (VoLTE/VoNR)</string>
+
+    <!-- Name of the VoWiFi status bar icon. -->
+    <string name="status_bar_vowifi">Wi-Fi 通話 (VoWiFi)</string>
+
+    <!-- WiFi standard numbering on statusbar -->
+    <string name="status_bar_wifi_standard">Wi-Fi 標準編號</string>
+
+    <!-- CPUInfo tile -->
+    <string name="quick_settings_cpuinfo_label">CPU 資訊</string>
+
+    <!-- Compass QS Tile -->
+    <string name="quick_settings_compass_label">指南針</string>
+    <string name="quick_settings_compass_value"><xliff:g id="degrees">%1$.0f</xliff:g>\u00b0 <xliff:g id="direction">%2$s</xliff:g></string>
+    <string name="quick_settings_compass_init">初始化中\u2026</string>
+    <string name="quick_settings_compass_N">北</string>
+    <string name="quick_settings_compass_NE">東北</string>
+    <string name="quick_settings_compass_E">東</string>
+    <string name="quick_settings_compass_SE">東南</string>
+    <string name="quick_settings_compass_S">南</string>
+    <string name="quick_settings_compass_SW">西南</string>
+    <string name="quick_settings_compass_W">西</string>
+    <string name="quick_settings_compass_NW">西北</string>
+
+    <!-- DataSwitch Tile -->
+    <string name="qs_data_switch_label">切換行動數據 SIM 卡</string>
+    <string name="qs_data_switch_sim_label">SIM %d</string>
+    <string name="qs_data_switch_sim_desc">SIM %d 是偏好的行動數據 SIM 卡</string>
+    <string name="qs_data_switch_sim_transient">切換中\u2026</string>
+
+    <!-- Screenshot Tile -->
+    <string name="screenshot_long_press">長按 - 選擇區域</string>
+
+    <!-- Language toggle tile -->
+    <string name="quick_settings_locale_label">語言</string>
+    <string name="quick_settings_locale_more_locales_toast">請先設定多種語言</string>
+
+    <!-- Sound QS Tile -->
+    <string name="quick_settings_sound_label">聲音</string>
+    <string name="quick_settings_sound_ring">響鈴</string>
+    <string name="quick_settings_sound_vibrate">震動</string>
+    <string name="quick_settings_sound_silent">靜音</string>
+
+    <!-- Privacy Indicator -->
+    <string name="mic_camera_privacy_indicator_title">麥克風與相機隱私指示器</string>
+    <string name="location_privacy_indicator_title">位置隱私指示器</string>
+    <string name="projection_privacy_indicator_title">媒體投影隱私指示器</string>
+
+    <!-- Preferred network tile -->
+    <string name="quick_settings_preferred_network_label">偏好網路</string>
+    <string name="quick_settings_preferred_network_lte">4G / LTE</string>
+    <string name="quick_settings_preferred_network_nr">5G / NR</string>
+    <string name="quick_settings_preferred_network_unsupported">不支援</string>
+
+    <!-- Music tile -->
+    <string name="quick_settings_music_label">音樂</string>
+    <string name="quick_settings_music_play">播放</string>
+    <string name="quick_settings_music_pause">暫停</string>
+    <string name="quick_settings_music_loading">載入中...</string>
+    <string name="quick_settings_music_no_player">無連接的播放器</string>
+    <string name="quick_settings_music_last_played">上次播放：%1$s</string>
+
+    <!-- USB function dialog - copied from Settings -->
+    <string name="usb_use_charging_only">不傳輸資料</string>
+    <string name="usb_use_file_transfers">檔案傳輸</string>
+    <string name="usb_use_photo_transfers">PTP</string>
+    <string name="usb_use_uvc_webcam">網路攝影機</string>
+    <string name="usb_use_tethering">USB 網路共用</string>
+    <string name="usb_use_MIDI">MIDI</string>
+    <string name="usb_use">USB 用途</string>
+
+    <!-- DerpFest Tile -->
+    <string name="quick_derpfest_label">DerpFest 自訂設定</string>
+    <string name="quick_derpfest_toast">哈哈，你真的以為長按會帶你到哪裡去嗎！！！</string>
+
+    <!-- Name of the bluetooth battery level status bar setting. -->
+    <string name="status_bar_bluetooth_battery_level">藍牙電池電量</string>
+
+    <!-- Data disabled icon -->
+    <string name="data_disabled_icon_title">行動數據停用圖示</string>
+
+    <!-- Island notification -->
+    <string name="now_playing_on">正在 %1$s 上播放</string>
+    <string name="by_artist">%1$s - %2$s</string>
+
+    <!-- Label for UI element which allows to use lens on screenshot [CHAR LIMIT=30] -->
+    <string name="screenshot_lens_label">智慧鏡頭 (Lens)</string>
+
+    <!-- 5G toggle in Internet Dialog -->
+    <string name="enable_fiveg">啟用 5G</string>
+
+    <!-- Data usage info in QS footer -->
+    <string name="usage_data">今日已用</string>
+    <string name="usage_data_weekly">本週已用</string>
+    <string name="usage_data_default_suffix">行動數據</string>
+    <string name="usage_wifi_default_suffix">Wi-Fi</string>
+
+    <!-- Label for notification action to delete a screen recording file [CHAR LIMIT=35] -->
+    <string name="screenrecord_delete_label">刪除</string>
+    <!-- A toast message shown after successfully deleting a screen recording [CHAR LIMIT=NONE] -->
+    <string name="screenrecord_delete_description">螢幕錄影已刪除</string>
+
+    <!-- Screen record dialog -->
+    <string name="screenrecord_keep_screen_awake_label">保持螢幕開啟</string>
+
+    <!-- 4G icon -->
+    <string name="show_fourg_icon_title">4G 圖示</string>
+
+    <!-- Heads up snooze toast -->
+    <string name="heads_up_snooze_message_one_minute"><xliff:g id="string">%s</xliff:g> - 預覽通知已暫停 1 分鐘。</string>
+    <string name="heads_up_snooze_message"><xliff:g id="string">%1$s</xliff:g> - 預覽通知已暫停 <xliff:g id="number">%2$d</xliff:g> 分鐘。</string>
+
+    <!-- Notification counter -->
+    <string name="status_bar_notification_info_overflow" translatable="false">\u221E</string>
+    <string name="status_bar_combined_notification_count">顯示合併通知計數</string>
+
+    <!-- Refresh rate QS tile -->
+    <string name="refresh_rate_tile_label">更新率</string>
+    <string name="refresh_rate_unknown">未知</string>
+
+    <!-- Flashlight Strength -->
+    <string name="flashlight_strength_title">手電筒亮度</string>
+    <string name="flashlight_strength_turn_off">關閉</string>
+    <string name="flashlight_strength_turn_on">開啟</string>
+
+    <!-- VPN tethering QS tile -->
+    <string name="vpn_tethering_label">VPN 網路共用</string>
+    <string name="vpn_tethering_changed_off">VPN 網路共用已關閉。</string>
+    <string name="vpn_tethering_changed_on">VPN 網路共用已開啟。</string>
+
+    <!-- Volume QS Tile -->
+    <string name="quick_settings_volume_label">音量</string>
+    <string name="qs_volume_dialog_title">音量控制</string>
+    <string name="qs_volume_dialog_mute">靜音</string>
+</resources>

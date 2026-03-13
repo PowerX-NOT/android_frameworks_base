@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: 2025 DerpFest
+     SPDX-License-Identifier: Apache-2.0
+-->
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+
+    <!-- Cycle through ringer modes -->
+    <string name="volume_dialog_ringer_guidance_normal">通話與通知將會響鈴</string>
+
+    <!-- Button that copies the url to the log of a crashed application -->
+    <string name="aerr_copy">複製當機紀錄 URL</string>
+    <string name="url_copy_success">URL 複製成功</string>
+    <string name="url_copy_failed">上傳紀錄至 mkr/bin 時發生錯誤</string>
+
+    <!-- Lock gesture -->
+    <string name="gesture_locked_warning">再次滑動以解鎖手勢</string>
+
+    <!-- Pocket Lock -->
+    <string name="pocket_lock_message_long_press">長按電源鍵以解鎖</string>
+    <string name="pocket_view_title">口袋模式已開啟</string>
+    <string name="pocket_view_title_cancel">請清除裝置頂部的遮蔽區域，或長按電源鍵以強制退出口袋模式</string>
+</resources>

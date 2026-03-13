@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: DerpFest AOSP
+     SPDX-License-Identifier: Apache-2.0
+-->
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+
+    <!-- ZenMode -->
+    <string name="interruption_level_none_with_warning">完全靜音。這也會將螢幕閱讀器設為靜音。</string>
+    <string name="interruption_level_priority">僅優先通知</string>
+    <string name="interruption_level_alarms">僅鬧鐘</string>
+    <string name="interruption_level_none_twoline">完全靜音</string>
+    <string name="interruption_level_priority_twoline">僅優先通知</string>
+    <string name="interruption_level_alarms_twoline">僅鬧鐘</string>
+
+    <!-- Deep sleep info -->
+    <string name="status_deep_sleep">(深層休眠：%1$d%2$s)</string>
+</resources>
