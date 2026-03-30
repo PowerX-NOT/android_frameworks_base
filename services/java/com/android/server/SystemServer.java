@@ -2441,6 +2441,14 @@ public final class SystemServer implements Dumpable {
                 t.traceEnd();
             }
 
+            t.traceBegin("StartTrueBackup");
+            try {
+                ServiceManager.addService("truebackup", new TrueBackupService(mSystemContext));
+            } catch (Throwable e) {
+                reportWtf("starting TrueBackupService", e);
+            }
+            t.traceEnd();
+
             if (context.getResources().getBoolean(R.bool.config_enableWallpaperService)) {
                 t.traceBegin("StartWallpaperManagerService");
                 mSystemServiceManager.startService(WallpaperManagerService.Lifecycle.class);
