@@ -34,6 +34,8 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 
+import androidx.annotation.Nullable;
+
 import com.android.systemui.res.R;
 import com.android.systemui.statusbar.phone.PhoneStatusBarPolicy.BluetoothIconState;
 
@@ -57,6 +59,17 @@ public class StatusBarBluetoothView extends FrameLayout implements StatusIconDis
     private int mVisibleState = -1;
     private int mBatteryLevel = -1;
     private ColorStateList mBatteryColor;
+
+    /**
+     * Applying {@link #setVisibleState} during
+     * {@link com.android.systemui.statusbar.phone.StatusIconContainer#onLayout} toggles
+     * {@link View#GONE} on children, which calls {@link #requestLayout()} and triggers
+     * "requestLayout() improperly called during layout" plus unstable width when the status
+     * clock moves to the right (less room for icons, overflow/dot state flips). Defer updates
+     * until after the layout pass.
+     */
+    @Nullable
+    private Runnable mApplyVisibilityRunnable;
 
     public static StatusBarBluetoothView fromContext(
             Context context, String slot, boolean blocked) {
@@ -124,8 +137,22 @@ public class StatusBarBluetoothView extends FrameLayout implements StatusIconDis
             return;
         }
         mVisibleState = state;
+        if (isInLayout()) {
+            if (mApplyVisibilityRunnable == null) {
+                mApplyVisibilityRunnable =
+                        () -> {
+                            mApplyVisibilityRunnable = null;
+                            applyVisibleStateToChildren();
+                        };
+                post(mApplyVisibilityRunnable);
+            }
+        } else {
+            applyVisibleStateToChildren();
+        }
+    }
 
-        switch (state) {
+    private void applyVisibleStateToChildren() {
+        switch (mVisibleState) {
             case STATE_ICON:
                 mBluetoothGroup.setVisibility(View.VISIBLE);
                 mDotView.setVisibility(View.GONE);
