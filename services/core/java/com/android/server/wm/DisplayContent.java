@@ -16,6 +16,7 @@
 
 package com.android.server.wm;
 
+
 import static android.app.ActivityTaskManager.INVALID_TASK_ID;
 import static android.app.WindowConfiguration.ACTIVITY_TYPE_DREAM;
 import static android.app.WindowConfiguration.ACTIVITY_TYPE_HOME;
@@ -4146,6 +4147,10 @@ class DisplayContent extends RootDisplayArea implements WindowManagerPolicy.Disp
         if (oldTask != newTask) {
             if (oldTask != null) oldTask.onAppFocusChanged(false);
             if (newTask != null) newTask.onAppFocusChanged(true);
+        }
+
+        if (mDisplayId == DEFAULT_DISPLAY && newFocus != null) {
+            AppLockService.get().onAppFocusChanged(newFocus, newTask);
         }
 
         getInputMonitor().setFocusedAppLw(newFocus);

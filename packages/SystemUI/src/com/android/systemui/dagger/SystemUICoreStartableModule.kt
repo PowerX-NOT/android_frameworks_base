@@ -21,6 +21,7 @@ import com.android.systemui.CoreStartable
 import com.android.systemui.LatencyTester
 import com.android.systemui.SliceBroadcastRelayHandler
 import com.android.systemui.accessibility.Magnification
+import com.android.systemui.applock.AppLockHelper
 import com.android.systemui.back.domain.interactor.BackActionInteractor
 import com.android.systemui.biometrics.BiometricNotificationService
 import com.android.systemui.bouncer.domain.startable.BouncerStartable
@@ -329,4 +330,9 @@ abstract class SystemUICoreStartableModule {
     abstract fun bindSysUIKeyGestureEventInitializer(
         keyGestureEventInitializer: SysUIKeyGestureEventInitializer
     ): CoreStartable
+
+    @Binds
+    @IntoMap
+    @ClassKey(AppLockHelper::class)
+    abstract fun bindAppLockHelper(impl: AppLockHelper): CoreStartable
 }

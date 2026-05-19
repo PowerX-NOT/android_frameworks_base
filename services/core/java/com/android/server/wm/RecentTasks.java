@@ -16,6 +16,7 @@
 
 package com.android.server.wm;
 
+
 import static android.app.ActivityManager.RECENT_IGNORE_UNAVAILABLE;
 import static android.app.ActivityManager.RECENT_WITH_EXCLUDED;
 import static android.app.ActivityTaskManager.INVALID_TASK_ID;
@@ -2057,6 +2058,7 @@ class RecentTasks {
         if (!getTasksAllowed) {
             Task.trimIneffectiveInfo(tr, rti);
         }
+        AppLockService.get().isTopAppLocked(rti, tr.effectiveUid);
         return rti;
     }
 

@@ -16,6 +16,7 @@
 
 package com.android.server.wm;
 
+
 import static android.app.ActivityOptions.ANIM_CUSTOM;
 import static android.app.ActivityOptions.ANIM_OPEN_CROSS_PROFILE_APPS;
 import static android.app.ActivityOptions.ANIM_SCENE_TRANSITION;
@@ -1637,6 +1638,9 @@ class Transition implements BLASTSyncEngine.TransactionReadyListener {
                     mController.mAtm.mRootWindowContainer.getDisplayContent(mRecentsDisplayId);
             dc.getInputMonitor().setActiveRecents(null /* task */, null /* layer */);
             dc.getInputMonitor().updateInputWindowsLw(false /* force */);
+            if (mRecentsDisplayId == DEFAULT_DISPLAY) {
+                AppLockService.get().clearUnlockedApp(dc.mFocusedApp);
+            }
         }
         if (mTransientLaunches != null) {
             for (int i = mTransientLaunches.size() - 1; i >= 0; --i) {

@@ -16,6 +16,7 @@
 
 package com.android.server.wm;
 
+
 import static android.Manifest.permission.EMBED_ANY_APP_IN_UNTRUSTED_MODE;
 import static android.Manifest.permission.MANAGE_ACTIVITY_TASKS;
 import static android.app.ActivityManager.LOCK_TASK_MODE_LOCKED;
@@ -703,6 +704,10 @@ class TaskFragment extends WindowContainer<WindowContainer> {
         if (r != null && mResumedActivity == null) {
             // Task is becoming active.
             getTask().touchActiveTime();
+        }
+
+        if (AppLockService.get().checkLockApp(mResumedActivity, r)) {
+            return;
         }
 
         final ActivityRecord prevR = mResumedActivity;
@@ -1864,6 +1869,10 @@ class TaskFragment extends WindowContainer<WindowContainer> {
             ProtoLog.d(WM_DEBUG_STATES, "resumeTopActivity: Restarting %s", next);
             next.setVisibility(true);
             mTaskSupervisor.startSpecificActivity(next, true, true);
+        }
+
+        if (AppLockService.get().checkLockApp(prev, next)) {
+            return true;
         }
 
         return true;
