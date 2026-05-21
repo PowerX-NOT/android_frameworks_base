@@ -2568,4 +2568,15 @@ public class QuickSettingsControllerImpl implements QuickSettingsController, Dum
         void onFlingQsWithoutClick(ValueAnimator animator, float qsExpansionHeight,
                 float target, float vel);
     }
+
+    /** Refresh notification rows when App Lock state changes for {@code packageName}. */
+    public final void onAppLockerUpdated(String packageName) {
+        NotificationStackScrollLayoutController controller = mNotificationStackScrollLayoutController;
+        if (controller == null || controller.getView() == null) {
+            return;
+        }
+
+        NotificationStackScrollLayout view = controller.getView();
+        view.post(() -> view.onAppLockerUpdate(packageName));
+    }
 }

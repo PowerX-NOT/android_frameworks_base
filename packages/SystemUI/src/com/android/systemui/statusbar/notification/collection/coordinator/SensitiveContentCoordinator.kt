@@ -90,6 +90,8 @@ constructor(
 
     private val onSensitiveStateChanged = Runnable() { invalidateList("onSensitiveStateChanged") }
 
+    private val onAppLockStateChanged = Runnable { invalidateList("applock-state-changed") }
+
     private val screenshareSecretFilter =
         object : NotifFilter("ScreenshareSecretFilter") {
             val NotificationEntry.isSecret
