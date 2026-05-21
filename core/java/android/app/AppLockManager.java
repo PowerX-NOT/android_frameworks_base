@@ -40,6 +40,14 @@ public class AppLockManager {
     public static final String SETTING_LOCK_TIMEOUT = "applock_locked_app_timeout";
     /** @hide */
     public static final String SETTING_CONFIG = "applock_config";
+    /** @hide */
+    public static final String SETTING_SECURITY_TYPE = "applock_security_type";
+    /** @hide */
+    public static final String SETTING_CREDENTIAL_HASH = "applock_credential_hash";
+    /** @hide */
+    public static final String SETTING_BIOMETRIC_ENABLED = "applock_biometric_enabled";
+    /** @hide */
+    public static final String SETTING_PREFER_BIOMETRIC = "applock_prefer_biometric";
 
     /** @hide */
     public static final String EXTRA_LOCKED_PACKAGE = "LOCKED_PACKAGE";
@@ -244,6 +252,24 @@ public class AppLockManager {
     public void unregisterAppSessionListener(IAppSessionListener listener) {
         try {
             mService.unregisterAppSessionListener(listener);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /** @hide */
+    public boolean putSecureString(@NonNull String key, String value) {
+        try {
+            return mService.putSecureString(key, value);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /** @hide */
+    public boolean putSecureInt(@NonNull String key, int value) {
+        try {
+            return mService.putSecureInt(key, value);
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }

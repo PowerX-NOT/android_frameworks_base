@@ -32,4 +32,9 @@ interface IAppLockManager {
     void unregisterAppLockStateListener(IAppLockStateListener listener);
     void registerAppSessionListener(IAppSessionListener listener);
     void unregisterAppSessionListener(IAppSessionListener listener);
+
+    /** Write an App Lock-owned Secure setting (com.android.applock only). */
+    boolean putSecureString(String key, String value);
+    /** Write an App Lock-owned Secure setting (com.android.applock only). */
+    boolean putSecureInt(String key, int value);
 }

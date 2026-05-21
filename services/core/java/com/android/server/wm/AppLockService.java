@@ -914,4 +914,39 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             Binder.restoreCallingIdentity(token);
         }
     }
+
+    private static final Set<String> ALLOWED_SECURE_STRING_KEYS = Set.of(
+            AppLockManager.SETTING_SECURITY_TYPE,
+            AppLockManager.SETTING_CREDENTIAL_HASH
+    );
+
+    private static final Set<String> ALLOWED_SECURE_INT_KEYS = Set.of(
+            AppLockManager.SETTING_BIOMETRIC_ENABLED,
+            AppLockManager.SETTING_PREFER_BIOMETRIC
+    );
+
+    @Override
+    public boolean putSecureString(String key, String value) {
+        enforceSettingsManager();
+        if (!ALLOWED_SECURE_STRING_KEYS.contains(key)) {
+            throw new SecurityException("App Lock cannot write Secure key: " + key);
+        }
+        final long token = Binder.clearCallingIdentity();
+        try {
+            return Settings.Secure.putStringForUser(mContext.getContentResolver(), key, value,
+                    UserHandle.USER_SYSTEM);
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+    }
+
+    @Override
+    public boolean putSecureInt(String key, int value) {
+        enforceSettingsManager();
+        if (!ALLOWED_SECURE_INT_KEYS.contains(key)) {
+            throw new SecurityException("App Lock cannot write Secure key: " + key);
+        }
+        putSecureIntSetting(key, value);
+        return true;
+    }
 }
