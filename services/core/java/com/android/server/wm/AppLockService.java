@@ -428,6 +428,15 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     @Override
     public boolean checkLockApp(ActivityRecord prev, ActivityRecord next) {
         if (next == null) return false;
+        // Back finishes the previous activity before focus moves; relock here because
+        // clearUnlockedApp() may run without a matching onAppFocusChanged relock.
+        if (prev != null && prev.finishing && mLockBehavior == LOCK_BEHAVIOR_ON_LEAVE
+                && mUnlockedApps.contains(sessionKey(prev))) {
+            if (next.isActivityTypeHomeOrRecents()
+                    || !prev.packageName.equals(next.packageName)) {
+                markSessionLocked(prev.packageName, prev.mUserId);
+            }
+        }
         clearUnlockedApp(next);
         if (!isAppLocked(next)) return false;
         if (!startAuthPrompt(next, "AppLock.checkLockApp")) return false;
@@ -771,7 +780,14 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         mUnlockTimestamps.clear();
         clearAllTimeouts();
         for (String key : keys) {
-            relockFromSessionKey(key);
+            int colon = key.indexOf(':');
+            if (colon <= 0 || colon >= key.length() - 1) continue;
+            try {
+                int userId = Integer.parseInt(key.substring(0, colon));
+                String pkg = key.substring(colon + 1);
+                notifyAppLocked(pkg, userId);
+            } catch (NumberFormatException ignored) {
+            }
         }
     }
 
