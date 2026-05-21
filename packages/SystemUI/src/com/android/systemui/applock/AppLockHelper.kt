@@ -99,11 +99,10 @@ class AppLockHelper @Inject constructor(
 
         override fun onAppLocked(packageName: String, userId: Int) {
             if (packageName.isBlank()) return
-            sessionKey(userId, packageName).let { k ->
-                if (notifUnlocks.contains(k)) return@let
-                sessionAuthCache[k]?.let { if (!it) return@onAppLocked }
-                sessionAuthCache[k] = true
-            }
+            val key = sessionKey(userId, packageName)
+            // Session ended: require auth again and drop notification-only unlock.
+            notifUnlocks.remove(key)
+            sessionAuthCache[key] = true
             mainExecutor.execute {
                 qsController.get().onAppLockerUpdated(packageName)
                 refreshState()
