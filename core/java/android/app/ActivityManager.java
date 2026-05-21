@@ -2778,6 +2778,14 @@ public class ActivityManager {
         @Deprecated
         public int affiliatedTaskId;
 
+        /**
+         * Whether the top activity of this recent task requires App Lock authentication
+         * before interaction (e.g. recents blur/lock affordance).
+         *
+         * @hide
+         */
+        public boolean isTopAppLocked;
+
         public RecentTaskInfo() {
         }
 
@@ -2794,6 +2802,7 @@ public class ActivityManager {
             id = source.readInt();
             persistentId = source.readInt();
             super.readTaskFromParcel(source);
+            isTopAppLocked = source.readBoolean();
         }
 
         @Override
@@ -2801,6 +2810,7 @@ public class ActivityManager {
             dest.writeInt(id);
             dest.writeInt(persistentId);
             super.writeTaskToParcel(dest, flags);
+            dest.writeBoolean(isTopAppLocked);
         }
 
         public static final @android.annotation.NonNull Creator<RecentTaskInfo> CREATOR
