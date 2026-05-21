@@ -16,7 +16,6 @@
 
 package com.android.systemui.statusbar.notification.collection.coordinator
 
-import android.app.AppLockManager
 import android.app.Notification
 import android.os.UserHandle
 import com.android.app.tracing.coroutines.launchTraced as launch
@@ -217,14 +216,9 @@ constructor(
                 screenshareNotificationHiding() &&
                     sensitiveNotificationProtectionController.shouldProtectNotification(entry)
 
-            val extras = entry.sbn.notification.extras
-            val appLockLocked = extras.getBoolean(
-                AppLockManager.EXTRA_NOTIFICATION_APP_LOCKED,
-                false,
-            )
             val pkg = entry.sbn.packageName
             val userId = entry.sbn.user.identifier
-            val isAppLocked = appLockLocked && appLockHelper.needsAuth(pkg, userId)
+            val isAppLocked = appLockHelper.shouldHideNotificationContent(pkg, userId)
             val needsRedaction =
                 isAppLocked ||
                     lockscreenUserManager.getRedactionType(entry) != REDACTION_TYPE_NONE

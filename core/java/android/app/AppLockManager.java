@@ -48,6 +48,8 @@ public class AppLockManager {
     public static final String SETTING_BIOMETRIC_ENABLED = "applock_biometric_enabled";
     /** @hide */
     public static final String SETTING_PREFER_BIOMETRIC = "applock_prefer_biometric";
+    /** @hide */
+    public static final String SETTING_HIDE_NOTIFICATION_CONTENT = "applock_hide_notification_content";
 
     /** @hide */
     public static final String EXTRA_LOCKED_PACKAGE = "LOCKED_PACKAGE";
@@ -140,6 +142,24 @@ public class AppLockManager {
     public void setLockTimeout(int timeoutSeconds) {
         try {
             mService.setLockTimeout(timeoutSeconds);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /** @hide */
+    public boolean isHideNotificationContentEnabled() {
+        try {
+            return mService.isHideNotificationContentEnabled();
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /** @hide */
+    public void setHideNotificationContent(boolean hide) {
+        try {
+            mService.setHideNotificationContent(hide);
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }

@@ -34,7 +34,6 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator.AnimatorUpdateListener;
-import android.app.AppLockManager;
 import android.app.Notification;
 import android.content.Context;
 import android.content.res.Configuration;
@@ -487,13 +486,8 @@ public class ExpandableNotificationRow extends ActivatableNotificationView
     private boolean isNotificationAppLocked() {
         StatusBarNotification sbn = getAppLockSbn();
         if (sbn == null) return false;
-        android.os.Bundle extras = sbn.getNotification().extras;
-        boolean appLockLocked = extras.getBoolean(
-                AppLockManager.EXTRA_NOTIFICATION_APP_LOCKED, false);
-        if (!appLockLocked) return false;
-        String pkg = sbn.getPackageName();
-        int userId = sbn.getUserId();
-        return mAppLockHelper.needsAuth(pkg, userId);
+        return mAppLockHelper.shouldHideNotificationContent(
+                sbn.getPackageName(), sbn.getUserId());
     }
 
     private boolean doesNotificationNeedAuth() {

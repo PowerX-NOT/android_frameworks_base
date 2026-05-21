@@ -33,7 +33,6 @@ import static com.android.systemui.DejankUtils.whitelistIpcs;
 import android.annotation.SuppressLint;
 import android.annotation.UserIdInt;
 import android.app.ActivityOptions;
-import android.app.AppLockManager;
 import android.app.KeyguardManager;
 import android.app.admin.DevicePolicyManager;
 import android.content.BroadcastReceiver;
@@ -735,11 +734,8 @@ public class NotificationLockscreenUserManagerImpl implements
     public @RedactionType int getRedactionType(NotificationEntry ent) {
         int userId = ent.getSbn().getUserId();
 
-        android.os.Bundle extras = ent.getSbn().getNotification().extras;
-        boolean appLockLocked = extras.getBoolean(
-                AppLockManager.EXTRA_NOTIFICATION_APP_LOCKED, false);
         String pkg = ent.getSbn().getPackageName();
-        if (appLockLocked && mAppLockHelper.needsAuth(pkg, userId)) {
+        if (mAppLockHelper.shouldHideNotificationContent(pkg, userId)) {
             return REDACTION_TYPE_PUBLIC;
         }
 

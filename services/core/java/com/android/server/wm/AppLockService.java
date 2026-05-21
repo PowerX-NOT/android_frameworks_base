@@ -71,6 +71,8 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
 
     private static final String SETTING_LOCK_BEHAVIOR = AppLockManager.SETTING_LOCK_BEHAVIOR;
     private static final String SETTING_LOCK_TIMEOUT = AppLockManager.SETTING_LOCK_TIMEOUT;
+    private static final String SETTING_HIDE_NOTIFICATION_CONTENT =
+            AppLockManager.SETTING_HIDE_NOTIFICATION_CONTENT;
 
     private static final int LOCK_BEHAVIOR_ON_LEAVE = AppLockManager.LOCK_BEHAVIOR_ON_LEAVE;
     private static final int LOCK_BEHAVIOR_TIMEOUT = AppLockManager.LOCK_BEHAVIOR_TIMEOUT;
@@ -104,6 +106,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     private String mLastFocusedAppKey;
     private int mLockBehavior = LOCK_BEHAVIOR_ON_LEAVE;
     private int mLockTimeout = AppLockManager.DEFAULT_LOCK_TIMEOUT;
+    private boolean mHideNotificationContent = true;
     private boolean mKeyguardDone = true;
     private boolean mCheckRecentTasks;
     private int mCurrentUserId;
@@ -186,6 +189,8 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                     Settings.Secure.getUriFor(SETTING_LOCK_BEHAVIOR), false, this, -1);
             resolver.registerContentObserver(
                     Settings.Secure.getUriFor(SETTING_LOCK_TIMEOUT), false, this, -1);
+            resolver.registerContentObserver(
+                    Settings.Secure.getUriFor(SETTING_HIDE_NOTIFICATION_CONTENT), false, this, -1);
         }
 
         @Override
@@ -195,6 +200,9 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                     LOCK_BEHAVIOR_ON_LEAVE, UserHandle.USER_SYSTEM);
             mLockTimeout = Settings.Secure.getIntForUser(resolver, SETTING_LOCK_TIMEOUT,
                     AppLockManager.DEFAULT_LOCK_TIMEOUT, UserHandle.USER_SYSTEM);
+            mHideNotificationContent = Settings.Secure.getIntForUser(resolver,
+                    SETTING_HIDE_NOTIFICATION_CONTENT, 1, UserHandle.USER_SYSTEM) != 0;
+            notifyNotificationHidingChanged();
         }
     }
 
@@ -247,6 +255,32 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         enforceSettingsManager();
         putSecureIntSetting(SETTING_LOCK_TIMEOUT, timeoutSeconds);
         mLockTimeout = timeoutSeconds;
+    }
+
+    @Override
+    public boolean isHideNotificationContentEnabled() {
+        return mHideNotificationContent;
+    }
+
+    @Override
+    public void setHideNotificationContent(boolean hide) {
+        enforceSettingsManager();
+        putSecureIntSetting(SETTING_HIDE_NOTIFICATION_CONTENT, hide ? 1 : 0);
+        mHideNotificationContent = hide;
+        notifyNotificationHidingChanged();
+    }
+
+    /** Whether notification content should be hidden for this locked app. */
+    public boolean shouldHideNotificationContent(String packageName) {
+        return mHideNotificationContent && hasAppLock(packageName);
+    }
+
+    private void notifyNotificationHidingChanged() {
+        notifyAppLockStateChanged("", false);
+        if (mController == null) return;
+        for (String packageName : mController.getLockedPackages()) {
+            notifyAppLockStateChanged(packageName, true);
+        }
     }
 
     @Override

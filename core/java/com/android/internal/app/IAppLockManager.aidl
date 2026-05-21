@@ -16,6 +16,9 @@ interface IAppLockManager {
     int getLockTimeout();
     void setLockTimeout(int timeoutSeconds);
 
+    boolean isHideNotificationContentEnabled();
+    void setHideNotificationContent(boolean hide);
+
     int getAppLockState(String packageName);
 
     void addLockedApp(String packageName);

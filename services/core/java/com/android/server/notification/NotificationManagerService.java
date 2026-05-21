@@ -8869,7 +8869,7 @@ public class NotificationManagerService extends SystemService {
         fixNotificationWithChannel(notification, channel, notificationUid, pkg);
 
         final NotificationRecord r = new NotificationRecord(getContext(), n, channel);
-        if (AppLockService.get().hasAppLock(pkg)) {
+        if (AppLockService.get().shouldHideNotificationContent(pkg)) {
             notification.extras.putBoolean(AppLockManager.EXTRA_NOTIFICATION_APP_LOCKED, true);
         } else {
             notification.extras.remove(AppLockManager.EXTRA_NOTIFICATION_APP_LOCKED);

@@ -45,6 +45,7 @@ class AppLockHelper @Inject constructor(
 
     private val serviceRef = AtomicReference<IAppLockManager?>()
     @Volatile private var listenersRegistered = false
+    @Volatile private var hideNotificationContent = true
     private val hasLockCache = ConcurrentHashMap<String, Boolean>()
     private val sessionAuthCache = ConcurrentHashMap<String, Boolean>()
     private val refreshListeners = CopyOnWriteArrayList<Runnable>()
@@ -65,7 +66,11 @@ class AppLockHelper @Inject constructor(
 
     private val lockStateListener = object : IAppLockStateListener.Stub() {
         override fun onAppLockStateChanged(packageName: String, locked: Boolean) {
-            if (packageName.isBlank()) return
+            if (packageName.isBlank()) {
+                hideNotificationContent = readHideNotificationContentSetting()
+                mainExecutor.execute { refreshState() }
+                return
+            }
             hasLockCache[packageName] = locked
             clearSessionCacheFor(packageName)
             if (!locked) {
@@ -164,7 +169,27 @@ class AppLockHelper @Inject constructor(
 
     override fun start() {
         keyguardStateController.addCallback(keyguardCallback)
+        hideNotificationContent = readHideNotificationContentSetting()
         getService()
+    }
+
+    fun isHideNotificationContentEnabled(): Boolean = hideNotificationContent
+
+    /** True when notification bodies should be hidden for this locked app session. */
+    fun shouldHideNotificationContent(packageName: String, userId: Int): Boolean {
+        if (!hideNotificationContent || packageName.isBlank()) return false
+        if (!hasAppLock(packageName)) return false
+        return needsAuth(packageName, userId)
+    }
+
+    private fun readHideNotificationContentSetting(): Boolean {
+        val manager = getService() ?: return true
+        return try {
+            manager.isHideNotificationContentEnabled()
+        } catch (e: RemoteException) {
+            Log.w(TAG, "isHideNotificationContentEnabled failed", e)
+            true
+        }
     }
 
     fun getState(packageName: String): AppLockState {
