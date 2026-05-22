@@ -71,6 +71,7 @@ import com.android.server.pm.pkg.ArchiveState;
 import com.android.server.pm.pkg.PackageStateInternal;
 import com.android.server.pm.pkg.PackageUserState;
 import com.android.server.wm.ActivityTaskManagerInternal;
+import com.android.server.wm.AppLockService;
 
 import dalvik.system.VMRuntime;
 
@@ -118,6 +119,12 @@ final class DeletePackageHelper {
      */
     public int deletePackageX(String packageName, long versionCode, int userId, int deleteFlags,
             boolean removedBySystem) {
+        if (!removedBySystem
+                && AppLockService.get().shouldBlockUninstall(packageName, userId)) {
+            AppLockService.get().showUninstallBlockedToast();
+            return PackageManager.DELETE_FAILED_USER_RESTRICTED;
+        }
+
         final PackageRemovedInfo info = new PackageRemovedInfo();
         final boolean res;
 
@@ -731,6 +738,20 @@ final class DeletePackageHelper {
 
         final boolean deleteAllUsers = (deleteFlags & PackageManager.DELETE_ALL_USERS) != 0;
         final int[] users = deleteAllUsers ? mUserManagerInternal.getUserIds() : new int[]{userId};
+
+        for (int user : users) {
+            if (AppLockService.get().shouldBlockUninstall(internalPackageName, user)) {
+                mPm.mHandler.post(() -> {
+                    try {
+                        AppLockService.get().showUninstallBlockedToast();
+                        observer.onPackageDeleted(packageName,
+                                PackageManager.DELETE_FAILED_USER_RESTRICTED, null);
+                    } catch (RemoteException re) {
+                    }
+                });
+                return;
+            }
+        }
 
         if (!isOrphaned(snapshot, internalPackageName)
                 && !allowSilentUninstall

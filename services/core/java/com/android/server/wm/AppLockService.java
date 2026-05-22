@@ -36,6 +36,7 @@ import android.os.UserHandle;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Slog;
+import android.widget.Toast;
 
 import com.android.internal.app.IAppLockManager;
 import com.android.internal.app.IAppLockStateListener;
@@ -273,6 +274,50 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     /** Whether notification content should be hidden for this locked app. */
     public boolean shouldHideNotificationContent(String packageName) {
         return mHideNotificationContent && hasAppLock(packageName);
+    }
+
+    /**
+     * Returns true when the package is App Lock protected and the user has not unlocked
+     * the current session on {@code userId}.
+     */
+    public boolean shouldBlockUninstall(String packageName, int userId) {
+        if (mController == null || !mController.isEnabled()) return false;
+        if (!mController.isAppLocked(packageName)) return false;
+        if (!mKeyguardDone) return true;
+
+        String key = sessionKey(userId, packageName);
+        boolean sessionUnlocked = mUnlockedApps.contains(key);
+        if (sessionUnlocked && mLockBehavior == LOCK_BEHAVIOR_TIMEOUT) {
+            Long lastUsed = mUnlockTimestamps.get(key);
+            if (lastUsed != null
+                    && (SystemClock.elapsedRealtime() - lastUsed) > (mLockTimeout * 1000L)) {
+                sessionUnlocked = false;
+            }
+        }
+        return !sessionUnlocked;
+    }
+
+    private static final String UNINSTALL_BLOCKED_TOAST_RES = "applock_uninstall_blocked_toast";
+
+    private CharSequence getUninstallBlockedToastText() {
+        try {
+            Context pkgContext = mContext.createPackageContext(AUTH_PACKAGE, 0);
+            int resId = pkgContext.getResources().getIdentifier(
+                    UNINSTALL_BLOCKED_TOAST_RES, "string", AUTH_PACKAGE);
+            if (resId != 0) {
+                return pkgContext.getText(resId);
+            }
+        } catch (PackageManager.NameNotFoundException e) {
+            Slog.w(TAG, "App Lock package not found for uninstall toast", e);
+        }
+        return "To uninstall a locked app, unlock it first";
+    }
+
+    /** Shows a toast when uninstall is blocked for a locked app. */
+    public void showUninstallBlockedToast() {
+        if (mContext == null || mAtms == null) return;
+        final CharSequence text = getUninstallBlockedToastText();
+        mAtms.mH.post(() -> Toast.makeText(mContext, text, Toast.LENGTH_LONG).show());
     }
 
     private void notifyNotificationHidingChanged() {
