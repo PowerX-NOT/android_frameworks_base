@@ -325,9 +325,10 @@ public class Task {
                         CONTROLLED_WINDOWING_MODES_WHEN_ACTIVE, taskInfo.getWindowingMode())
                 && (taskInfo.getActivityType() == ACTIVITY_TYPE_UNDEFINED
                 || ArrayUtils.contains(CONTROLLED_ACTIVITY_TYPES, taskInfo.getActivityType()));
+        // App Lock uses a synthetic recents snapshot; do not treat it as keyguard-locked.
         Task result = new Task(taskKey,
                 td != null ? td.getPrimaryColor() : 0,
-                td != null ? td.getBackgroundColor() : 0, isDockable , isLocked, td,
+                td != null ? td.getBackgroundColor() : 0, isDockable, isLocked, td,
                 taskInfo.topActivity);
         result.appBounds = taskInfo.configuration.windowConfiguration.getAppBounds();
         return result;

@@ -20,6 +20,7 @@ interface IAppLockManager {
     void setHideNotificationContent(boolean hide);
 
     int getAppLockState(String packageName);
+    int getAppLockStateForUser(String packageName, int userId);
 
     void addLockedApp(String packageName);
     void removeLockedApp(String packageName);

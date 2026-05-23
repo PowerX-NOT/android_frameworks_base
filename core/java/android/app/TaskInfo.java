@@ -331,6 +331,12 @@ public class TaskInfo {
     public boolean isVisible;
 
     /**
+     * Whether App Lock requires hiding the recents snapshot for this task (session locked).
+     * @hide
+     */
+    public boolean topActivityAppLockLocked;
+
+    /**
      * Whether this task is request visible.
      * @hide
      */
@@ -652,6 +658,7 @@ public class TaskInfo {
         appCompatTaskInfo = source.readTypedObject(AppCompatTaskInfo.CREATOR);
         topActivityMainWindowFrame = source.readTypedObject(Rect.CREATOR);
         isAppBubble = source.readBoolean();
+        topActivityAppLockLocked = source.readBoolean();
     }
 
     /**
@@ -710,6 +717,7 @@ public class TaskInfo {
         dest.writeTypedObject(appCompatTaskInfo, flags);
         dest.writeTypedObject(topActivityMainWindowFrame, flags);
         dest.writeBoolean(isAppBubble);
+        dest.writeBoolean(topActivityAppLockLocked);
     }
 
     @Override

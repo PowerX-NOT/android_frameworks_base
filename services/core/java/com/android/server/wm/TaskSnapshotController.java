@@ -146,6 +146,10 @@ class TaskSnapshotController extends AbsAppSnapshotController<Task, TaskSnapshot
         if (shouldDisableSnapshots()) {
             return;
         }
+        if (shouldMaskAppLockRecents(task)) {
+            publishAppLockRecentsSnapshot(task);
+            return;
+        }
         final SnapshotSupplier supplier = getRecordSnapshotSupplier(task, REFERENCE_NONE);
         if (supplier == null) {
             return;
@@ -167,17 +171,54 @@ class TaskSnapshotController extends AbsAppSnapshotController<Task, TaskSnapshot
     SnapshotSupplier getRecordSnapshotSupplier(Task task,
             @TaskSnapshot.ReferenceFlags int initialUsage) {
         return recordSnapshotInner(task, true /* allowAppTheme */, snapshot -> {
+            TaskSnapshot toPublish = snapshot;
+            if (shouldMaskAppLockRecents(task)) {
+                final TaskSnapshot masked = AppLockService.get().getRecentsPlaceholderSnapshot(
+                        task, snapshot.isLowResolution(), TaskSnapshot.REFERENCE_NONE);
+                if (masked != null) {
+                    mCache.putSnapshot(task, masked);
+                    snapshot.closeBuffer();
+                    toPublish = masked;
+                }
+            }
             if (initialUsage != REFERENCE_NONE) {
-                snapshot.addReference(initialUsage);
+                toPublish.addReference(initialUsage);
             }
             if (!task.isActivityTypeHome()) {
-                final var updateCacheFunction = mOnlyCacheLowResSnapshot
-                        ? updateLowResToCacheFunction(task, snapshot.getId()) : null;
-                mPersister.persistSnapshotAndConvert(
-                        task.mTaskId, task.mUserId, snapshot, updateCacheFunction);
-                task.onSnapshotChanged(snapshot);
+                if (toPublish == snapshot) {
+                    final var updateCacheFunction = mOnlyCacheLowResSnapshot
+                            ? updateLowResToCacheFunction(task, snapshot.getId()) : null;
+                    mPersister.persistSnapshotAndConvert(
+                            task.mTaskId, task.mUserId, snapshot, updateCacheFunction);
+                }
+                task.onSnapshotChanged(toPublish);
             }
         });
+    }
+
+    private static boolean shouldMaskAppLockRecents(Task task) {
+        final String pkg = AppLockService.getRecentsPackageName(task);
+        return pkg != null && AppLockService.get().shouldHideRecentsSnapshot(pkg, task.mUserId);
+    }
+
+    /**
+     * Publishes a masked recents snapshot without capturing the real task content.
+     */
+    void publishAppLockRecentsSnapshot(Task task) {
+        final TaskSnapshot masked = AppLockService.get().getRecentsSnapshotIfLocked(
+                task, /* isLowResolution= */ false, TaskSnapshot.REFERENCE_CACHE);
+        if (masked == null) {
+            return;
+        }
+        synchronized (mService.mGlobalLock) {
+            if (!task.isAttached()) {
+                return;
+            }
+            mCache.putSnapshot(task, masked);
+            // Invalidate first so Launcher drops any stale real thumbnail.
+            task.onSnapshotInvalidated();
+            task.onSnapshotChanged(masked);
+        }
     }
 
     private Consumer<BaseAppSnapshotPersister.LowResSnapshotSupplier> updateLowResToCacheFunction(

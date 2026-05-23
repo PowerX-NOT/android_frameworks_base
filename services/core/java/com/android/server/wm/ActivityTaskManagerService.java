@@ -4477,6 +4477,11 @@ public class ActivityTaskManagerService extends IActivityTaskManager.Stub {
                 Slog.w(TAG, "getTaskSnapshot: taskId=" + taskId + " not found");
                 return null;
             }
+            final TaskSnapshot masked = AppLockService.get().getRecentsSnapshotIfLocked(
+                    task, isLowResolution, usage);
+            if (masked != null) {
+                return masked;
+            }
             // Try to load snapshot from cache first, and add reference if the snapshot is in cache.
             final TaskSnapshot snapshot;
             if (com.android.window.flags.Flags.reduceTaskSnapshotMemoryUsage()) {
@@ -4508,6 +4513,11 @@ public class ActivityTaskManagerService extends IActivityTaskManager.Stub {
                 if (task == null) {
                     Slog.w(TAG, "getTaskSnapshot: taskId=" + taskId + " not found");
                     return null;
+                }
+                final TaskSnapshot masked = AppLockService.get().getRecentsSnapshotIfLocked(
+                        task, isLowResolution, TaskSnapshot.REFERENCE_WRITE_TO_PARCEL);
+                if (masked != null) {
+                    return masked;
                 }
                 final TaskSnapshot snapshot;
                 if (com.android.window.flags.Flags.reduceTaskSnapshotMemoryUsage()) {

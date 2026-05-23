@@ -3474,6 +3474,13 @@ class Task extends TaskFragment {
         info.topActivityMainWindowFrame = calculateTopActivityMainWindowFrameForTaskInfo(top);
         // If new Tasks launched from this Task should be Bubble, this should also be a Bubble.
         info.isAppBubble = mLaunchNextToBubble;
+        final String pkg = AppLockService.getRecentsPackageName(this);
+        if (pkg != null && AppLockService.get().shouldHideRecentsSnapshot(pkg, info.userId)) {
+            info.topActivityAppLockLocked = true;
+            AppLockService.get().applyRecentsTaskAppearance(info, mAtmService.getUiContext());
+        } else {
+            info.topActivityAppLockLocked = false;
+        }
     }
 
     /**

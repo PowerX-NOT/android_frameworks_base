@@ -10,12 +10,14 @@ import static android.app.AppLockManager.AppLockState.UNLOCKED;
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.AppLockManager;
+import android.app.TaskInfo;
 import android.app.AppLockManager.AppLockState;
 import android.app.IApplicationThread;
 import android.app.WindowConfiguration;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.ContentResolver;
+import android.annotation.Nullable;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -37,6 +39,7 @@ import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Slog;
 import android.widget.Toast;
+import android.window.TaskSnapshot;
 
 import com.android.internal.app.IAppLockManager;
 import com.android.internal.app.IAppLockStateListener;
@@ -111,6 +114,9 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     private boolean mKeyguardDone = true;
     private boolean mCheckRecentTasks;
     private int mCurrentUserId;
+
+    private final AppLockRecentsSnapshotHelper mRecentsSnapshotHelper =
+            new AppLockRecentsSnapshotHelper();
 
     private static final class Holder {
         private static final AppLockService INSTANCE = new AppLockService();
@@ -276,6 +282,80 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         return mHideNotificationContent && hasAppLock(packageName);
     }
 
+    /** Whether recents should hide the task snapshot (App Lock session requires auth). */
+    public boolean shouldHideRecentsSnapshot(String packageName, int userId) {
+        return computeAppLockStateForUser(packageName, userId) == LOCKED;
+    }
+
+    @Nullable
+    static String getRecentsPackageName(@Nullable Task task) {
+        if (task == null) return null;
+        final ActivityRecord top = task.getTopNonFinishingActivity();
+        if (top != null) {
+            return top.packageName;
+        }
+        final ComponentName topComponent = task.realActivity != null
+                ? task.realActivity : task.getBaseIntent().getComponent();
+        return topComponent != null ? topComponent.getPackageName() : null;
+    }
+
+    /**
+     * Returns a masked recents snapshot when the task requires App Lock auth, or {@code null} if the
+     * real snapshot should be used.
+     */
+    @Nullable
+    public TaskSnapshot getRecentsSnapshotIfLocked(@Nullable Task task, boolean isLowResolution,
+            @TaskSnapshot.ReferenceFlags int usage) {
+        if (task == null) return null;
+        final String pkg = getRecentsPackageName(task);
+        if (pkg == null || !shouldHideRecentsSnapshot(pkg, task.mUserId)) {
+            return null;
+        }
+        final TaskSnapshot snapshot = getRecentsPlaceholderSnapshot(task, isLowResolution, usage);
+        if (snapshot != null) {
+            Slog.d(TAG, "Recents snapshot masked for " + pkg + " taskId=" + task.mTaskId
+                    + " userId=" + task.mUserId);
+        } else {
+            Slog.w(TAG, "Failed to build recents placeholder for " + pkg + " taskId="
+                    + task.mTaskId);
+        }
+        return snapshot;
+    }
+
+    /**
+     * Applies theme-aware colors to {@link TaskInfo} when the recents snapshot is hidden so the
+     * overview card matches the current system theme instead of appearing black.
+     */
+    public void applyRecentsTaskAppearance(@Nullable TaskInfo info, @Nullable Context ctx) {
+        if (info == null || ctx == null) return;
+        final int surfaceColor = ctx.getColor(
+                com.android.internal.R.color.materialColorSurfaceContainerHigh);
+        final ActivityManager.TaskDescription current = info.taskDescription;
+        final ActivityManager.TaskDescription td = current != null
+                ? new ActivityManager.TaskDescription(current)
+                : new ActivityManager.TaskDescription();
+        td.setBackgroundColor(surfaceColor);
+        td.setPrimaryColor(surfaceColor);
+        td.setStatusBarColor(surfaceColor);
+        td.setNavigationBarColor(surfaceColor);
+        info.taskDescription = td;
+    }
+
+    /**
+     * Theme-aware recents thumbnail with lock icon and label (no real app content).
+     */
+    @Nullable
+    public TaskSnapshot getRecentsPlaceholderSnapshot(Task task, boolean isLowResolution,
+            @TaskSnapshot.ReferenceFlags int usage) {
+        final Context ctx = mAtms != null ? mAtms.getUiContext() : mContext;
+        return mRecentsSnapshotHelper.getSnapshot(task, ctx, isLowResolution, usage);
+    }
+
+    /** Drops cached placeholder snapshots for a task (e.g. after unlock). */
+    public void evictRecentsPlaceholderSnapshot(int taskId) {
+        mRecentsSnapshotHelper.evictForTask(taskId);
+    }
+
     /**
      * Returns true when the package is App Lock protected and the user has not unlocked
      * the current session on {@code userId}.
@@ -298,6 +378,23 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     }
 
     private static final String UNINSTALL_BLOCKED_TOAST_RES = "applock_uninstall_blocked_toast";
+    private static final String RECENTS_LOCKED_LABEL_RES = "applock_recents_locked_label";
+
+    /** Label drawn on the masked recents thumbnail (loaded from the App Lock APK). */
+    public String getRecentsLockedLabel() {
+        if (mContext == null) return "App locked";
+        try {
+            final Context pkgContext = mContext.createPackageContext(AUTH_PACKAGE, 0);
+            final int resId = pkgContext.getResources().getIdentifier(
+                    RECENTS_LOCKED_LABEL_RES, "string", AUTH_PACKAGE);
+            if (resId != 0) {
+                return pkgContext.getString(resId);
+            }
+        } catch (PackageManager.NameNotFoundException e) {
+            Slog.w(TAG, "App Lock package not found for recents label", e);
+        }
+        return "App locked";
+    }
 
     private CharSequence getUninstallBlockedToastText() {
         try {
@@ -331,6 +428,11 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     @Override
     public int getAppLockState(String packageName) {
         return computeAppLockState(packageName).ordinal();
+    }
+
+    @Override
+    public int getAppLockStateForUser(String packageName, int userId) {
+        return computeAppLockStateForUser(packageName, userId).ordinal();
     }
 
     public boolean hasAppLock(String packageName) {
@@ -525,7 +627,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     @Override
     public boolean isTopAppLocked(ActivityManager.RecentTaskInfo rti, int topUserId) {
         rti.isTopAppLocked = false;
-        if (!mCheckRecentTasks || mController == null || !mController.isEnabled()) {
+        if (mController == null || !mController.isEnabled()) {
             return false;
         }
         ComponentName component = rti.baseIntent.getComponent();
@@ -535,10 +637,9 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             int userId = UserHandle.getUserId(topUserId);
             if (isAuthActivity(component)) {
                 rti.isTopAppLocked = true;
-            } else if (mController.isAppLocked(packageName)) {
-                String key = sessionKey(userId, packageName);
-                rti.isTopAppLocked = !(mLockBehavior == LOCK_BEHAVIOR_ON_LEAVE
-                        && mUnlockedApps.contains(key));
+            } else {
+                rti.isTopAppLocked =
+                        computeAppLockStateForUser(packageName, userId) == LOCKED;
             }
         } finally {
             Binder.restoreCallingIdentity(identity);
@@ -699,13 +800,17 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     // --- internals ---
 
     private AppLockState computeAppLockState(String packageName) {
+        return computeAppLockStateForUser(packageName,
+                UserHandle.getUserId(Binder.getCallingUid()));
+    }
+
+    private AppLockState computeAppLockStateForUser(String packageName, int userId) {
         if (mController == null || !mController.isEnabled()) return NONE;
         if (PROTECTED_PACKAGES.contains(packageName) || !mController.isAppLocked(packageName)) {
             return NONE;
         }
         if (!mKeyguardDone) return LOCKED;
 
-        int userId = UserHandle.getUserId(Binder.getCallingUid());
         String key = sessionKey(userId, packageName);
         boolean sessionUnlocked = mUnlockedApps.contains(key);
         if (sessionUnlocked && mLockBehavior == LOCK_BEHAVIOR_TIMEOUT) {
@@ -815,6 +920,22 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             mUnlockTimestamps.remove(key);
             cancelTimeoutLock(key);
             notifyAppLocked(packageName, userId);
+            refreshRecentsSnapshotsForPackage(packageName, userId);
+        }
+    }
+
+    /** Pushes masked snapshots to recents after a session is locked. */
+    private void refreshRecentsSnapshotsForPackage(String packageName, int userId) {
+        if (mAtms == null || mAtms.mWindowManager == null) return;
+        synchronized (mAtms.mGlobalLock) {
+            mAtms.mRootWindowContainer.forAllTasks(task -> {
+                if (!task.inRecents || task.mUserId != userId) return;
+                if (!packageName.equals(getRecentsPackageName(task))) return;
+                evictRecentsPlaceholderSnapshot(task.mTaskId);
+                mAtms.mWindowManager.mTaskSnapshotController.removeAndDeleteSnapshot(
+                        task.mTaskId, task.mUserId);
+                mAtms.mWindowManager.mTaskSnapshotController.publishAppLockRecentsSnapshot(task);
+            });
         }
     }
 
@@ -831,6 +952,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                 int userId = Integer.parseInt(key.substring(0, colon));
                 String pkg = key.substring(colon + 1);
                 notifyAppLocked(pkg, userId);
+                refreshRecentsSnapshotsForPackage(pkg, userId);
             } catch (NumberFormatException ignored) {
             }
         }

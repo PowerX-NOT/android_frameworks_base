@@ -285,6 +285,11 @@ class SnapshotController {
         TaskSnapshot inCacheSnapshot;
         boolean convertToLow;
         synchronized (mService.mGlobalLock) {
+            final TaskSnapshot masked = AppLockService.get().getRecentsSnapshotIfLocked(
+                    task, requestLowResolution, TaskSnapshot.REFERENCE_WRITE_TO_PARCEL);
+            if (masked != null) {
+                return masked;
+            }
             inCacheSnapshot = mTaskSnapshotController.getSnapshot(
                     taskId, retrieveResolution);
             if (inCacheSnapshot != null) {
@@ -397,6 +402,11 @@ class SnapshotController {
                         Slog.w(TAG, "takeTaskSnapshot: taskId=" + taskId
                                 + " not found or not visible");
                         return null;
+                    }
+                    final TaskSnapshot masked = AppLockService.get().getRecentsSnapshotIfLocked(
+                            task, lowResolution, TaskSnapshot.REFERENCE_WRITE_TO_PARCEL);
+                    if (masked != null) {
+                        return masked;
                     }
                     // Note that if updateCache is true, ActivityRecord#shouldUseAppThemeSnapshot
                     // will be used to decide whether the task is allowed to be captured because

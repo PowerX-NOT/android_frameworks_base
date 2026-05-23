@@ -175,6 +175,15 @@ public class AppLockManager {
     }
 
     /** @hide */
+    public AppLockState getAppLockStateForUser(@NonNull String packageName, int userId) {
+        try {
+            return AppLockState.fromOrdinal(mService.getAppLockStateForUser(packageName, userId));
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /** @hide */
     public void addLockedApp(@NonNull String packageName) {
         try {
             mService.addLockedApp(packageName);
