@@ -25,6 +25,7 @@ import static com.android.server.wm.WindowManagerDebugConfig.TAG_WM;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.app.ActivityManager;
+import android.content.ComponentName;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.os.Environment;
@@ -170,11 +171,17 @@ class TaskSnapshotController extends AbsAppSnapshotController<Task, TaskSnapshot
     SnapshotSupplier getRecordSnapshotSupplier(Task task,
             @TaskSnapshot.ReferenceFlags int initialUsage) {
         return recordSnapshotInner(task, true /* allowAppTheme */, snapshot -> {
+            if (isAuthSnapshot(task, snapshot)) {
+                // Auth runs in the same task as the locked app; never store its black frame.
+                mCache.removeRunningEntry(task.mTaskId);
+                return;
+            }
             final TaskSnapshot masked = maskSnapshotForTask(task, snapshot);
             if (initialUsage != REFERENCE_NONE) {
                 masked.addReference(initialUsage);
             }
             if (!task.isActivityTypeHome()) {
+                mCache.putSnapshot(task, masked);
                 final var updateCacheFunction = mOnlyCacheLowResSnapshot
                         ? updateLowResToCacheFunction(task, masked.getId()) : null;
                 mPersister.persistSnapshotAndConvert(
@@ -299,12 +306,14 @@ class TaskSnapshotController extends AbsAppSnapshotController<Task, TaskSnapshot
         if (snapshot == null) {
             return null;
         }
-        final android.content.ComponentName component = snapshot.getTopActivityComponent();
-        if (component == null) {
-            return snapshot;
+        synchronized (mService.mGlobalLock) {
+            final Task task = mService.mRoot.anyTaskForId(taskId);
+            final String packageName = resolvePackageForSnapshot(task, snapshot);
+            if (packageName == null) {
+                return snapshot;
+            }
+            return AppLockSnapshotMasker.maskIfNeeded(snapshot, packageName, mService.mContext);
         }
-        return AppLockSnapshotMasker.maskIfNeeded(snapshot, component.getPackageName(),
-                mService.mContext);
     }
 
     void invalidateSnapshotsForLockedPackages(List<String> packageNames) {
@@ -314,8 +323,8 @@ class TaskSnapshotController extends AbsAppSnapshotController<Task, TaskSnapshot
         final Set<String> locked = Set.copyOf(packageNames);
         synchronized (mService.mGlobalLock) {
             mService.mRoot.forAllTasks(task -> {
-                final ActivityRecord top = task.getTopNonFinishingActivity();
-                if (top != null && locked.contains(top.packageName)) {
+                final String packageName = resolvePackageForSnapshot(task, null);
+                if (packageName != null && locked.contains(packageName)) {
                     removeAndDeleteSnapshot(task.mTaskId, task.mUserId);
                 }
             });
@@ -335,14 +344,59 @@ class TaskSnapshotController extends AbsAppSnapshotController<Task, TaskSnapshot
 
     @Nullable
     private TaskSnapshot maskSnapshotForTask(@Nullable Task task, @Nullable TaskSnapshot snapshot) {
-        if (snapshot == null || task == null) {
+        if (snapshot == null) {
+            return null;
+        }
+        final String packageName = resolvePackageForSnapshot(task, snapshot);
+        if (packageName == null) {
             return snapshot;
         }
-        final ActivityRecord top = task.getTopNonFinishingActivity();
-        if (top == null) {
-            return snapshot;
+        return AppLockSnapshotMasker.maskIfNeeded(snapshot, packageName, mService.mContext);
+    }
+
+    @Nullable
+    private String resolvePackageForSnapshot(@Nullable Task task, @Nullable TaskSnapshot snapshot) {
+        String packageName = null;
+        ComponentName snapshotComponent = snapshot != null ? snapshot.getTopActivityComponent() : null;
+        if (task != null) {
+            final ActivityRecord top = task.getTopNonFinishingActivity();
+            if (top != null) {
+                packageName = top.packageName;
+            } else {
+                final ActivityRecord topMost = task.getTopMostActivity();
+                if (topMost != null) {
+                    packageName = topMost.packageName;
+                }
+            }
         }
-        return AppLockSnapshotMasker.maskIfNeeded(snapshot, top.packageName, mService.mContext);
+        if (packageName == null && snapshotComponent != null) {
+            packageName = snapshotComponent.getPackageName();
+        }
+        final AppLockService appLock = AppLockService.get();
+        if ((packageName != null && appLock.isAuthPackage(packageName))
+                || (snapshotComponent != null && appLock.isAuthActivity(snapshotComponent))) {
+            if (task != null) {
+                if (task.realActivity != null) {
+                    return task.realActivity.getPackageName();
+                }
+                if (task.intent != null && task.intent.getComponent() != null) {
+                    return task.intent.getComponent().getPackageName();
+                }
+            }
+        }
+        return packageName;
+    }
+
+    private static boolean isAuthSnapshot(Task task, TaskSnapshot snapshot) {
+        final AppLockService appLock = AppLockService.get();
+        if (task != null) {
+            final ActivityRecord top = task.getTopNonFinishingActivity();
+            if (top != null && appLock.isAuthActivity(top.mActivityComponent)) {
+                return true;
+            }
+        }
+        final ComponentName component = snapshot.getTopActivityComponent();
+        return component != null && appLock.isAuthActivity(component);
     }
 
     /**

@@ -104,6 +104,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     private final Set<String> mPendingUnlocks = new HashSet<>();
     private final Map<String, Long> mUnlockTimestamps = new HashMap<>();
     private final Map<String, Runnable> mTimeoutRunnables = new HashMap<>();
+    private final Map<Integer, Runnable> mPendingSnapshotRefresh = new HashMap<>();
     private String mLastFocusedAppKey;
     private int mLockBehavior = LOCK_BEHAVIOR_ON_LEAVE;
     private int mLockTimeout = AppLockManager.DEFAULT_LOCK_TIMEOUT;
@@ -493,11 +494,17 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         if (next == null) return false;
         // Back finishes the previous activity before focus moves; relock here because
         // clearUnlockedApp() may run without a matching onAppFocusChanged relock.
-        if (prev != null && prev.finishing && mLockBehavior == LOCK_BEHAVIOR_ON_LEAVE
-                && mUnlockedApps.contains(sessionKey(prev))) {
+        if (prev != null && prev.finishing && mController != null
+                && mController.isAppLocked(prev.packageName)) {
             if (next.isActivityTypeHomeOrRecents()
                     || !prev.packageName.equals(next.packageName)) {
-                markSessionLocked(prev.packageName, prev.mUserId);
+                if (mLockBehavior == LOCK_BEHAVIOR_ON_LEAVE
+                        && mUnlockedApps.contains(sessionKey(prev))) {
+                    markSessionLocked(prev.packageName, prev.mUserId);
+                }
+                // Back finishes the activity before the snapshot can be masked using the live
+                // task top; drop the cached thumbnail so recents reloads a masked snapshot.
+                invalidateTaskSnapshot(prev);
             }
         }
         clearUnlockedApp(next);
@@ -538,6 +545,11 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         return component != null
                 && AUTH_PACKAGE.equals(component.getPackageName())
                 && AUTH_ACTIVITY.equals(component.getClassName());
+    }
+
+    /** Whether {@code packageName} is the App Lock auth overlay package. */
+    public boolean isAuthPackage(String packageName) {
+        return AUTH_PACKAGE.equals(packageName);
     }
 
     @Override
@@ -833,6 +845,42 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             cancelTimeoutLock(key);
             notifyAppLocked(packageName, userId);
         }
+    }
+
+    private void invalidateTaskSnapshot(ActivityRecord r) {
+        if (r == null || mAtms == null) {
+            return;
+        }
+        final Task task = r.getTask();
+        if (task == null) {
+            return;
+        }
+        final TaskSnapshotController controller =
+                mAtms.mWindowManager.mTaskSnapshotController;
+        final int taskId = task.mTaskId;
+        controller.removeAndDeleteSnapshot(taskId, task.mUserId);
+        task.onSnapshotInvalidated();
+        // Do not capture immediately: during Back the task surface is often black while the
+        // auth overlay or close transition is still on screen. Re-capture after the transition.
+        Runnable pending = mPendingSnapshotRefresh.remove(taskId);
+        if (pending != null) {
+            mAtms.mH.removeCallbacks(pending);
+        }
+        final Runnable refresh = () -> {
+            mPendingSnapshotRefresh.remove(taskId);
+            synchronized (mAtms.mGlobalLock) {
+                if (!task.isAttached()) {
+                    return;
+                }
+                final ActivityRecord top = task.getTopNonFinishingActivity();
+                if (top != null && isAuthActivity(top.mActivityComponent)) {
+                    return;
+                }
+                controller.recordSnapshot(task);
+            }
+        };
+        mPendingSnapshotRefresh.put(taskId, refresh);
+        mAtms.mH.postDelayed(refresh, 400);
     }
 
     private void lockAllSessionsAndNotify() {
