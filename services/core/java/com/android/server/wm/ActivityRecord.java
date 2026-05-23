@@ -4090,6 +4090,7 @@ final class ActivityRecord extends WindowToken {
             return;
         }
         finishing = true;
+        AppLockService.get().onActivityFinishing(this);
 
         // Transfer the launch cookie to the next running activity above this in the same task.
         if (mLaunchCookie != null && mState != RESUMED && task != null && !task.mInRemoveTask

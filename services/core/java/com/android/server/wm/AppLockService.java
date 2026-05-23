@@ -291,8 +291,12 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     static String getRecentsPackageName(@Nullable Task task) {
         if (task == null) return null;
         final ActivityRecord top = task.getTopNonFinishingActivity();
-        if (top != null) {
+        if (top != null && !AUTH_PACKAGE.equals(top.packageName)) {
             return top.packageName;
+        }
+        final String basePkg = task.getBasePackageName();
+        if (basePkg != null && !AUTH_PACKAGE.equals(basePkg)) {
+            return basePkg;
         }
         final ComponentName topComponent = task.realActivity != null
                 ? task.realActivity : task.getBaseIntent().getComponent();
@@ -574,16 +578,15 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
 
     @Override
     public boolean checkLockApp(ActivityRecord prev, ActivityRecord next) {
-        if (next == null) return false;
-        // Back finishes the previous activity before focus moves; relock here because
-        // clearUnlockedApp() may run without a matching onAppFocusChanged relock.
+        // Back can finish the last activity with next==null; relock before that early return.
         if (prev != null && prev.finishing && mLockBehavior == LOCK_BEHAVIOR_ON_LEAVE
                 && mUnlockedApps.contains(sessionKey(prev))) {
-            if (next.isActivityTypeHomeOrRecents()
+            if (next == null || next.isActivityTypeHomeOrRecents()
                     || !prev.packageName.equals(next.packageName)) {
                 markSessionLocked(prev.packageName, prev.mUserId);
             }
         }
+        if (next == null) return false;
         clearUnlockedApp(next);
         if (!isAppLocked(next)) return false;
         if (!startAuthPrompt(next, "AppLock.checkLockApp")) return false;
@@ -920,8 +923,28 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             mUnlockTimestamps.remove(key);
             cancelTimeoutLock(key);
             notifyAppLocked(packageName, userId);
-            refreshRecentsSnapshotsForPackage(packageName, userId);
         }
+        refreshRecentsSnapshotsForPackage(packageName, userId);
+    }
+
+    /**
+     * Relocks when the user presses Back and the last activity in a locked app is finishing.
+     */
+    public void onActivityFinishing(ActivityRecord r) {
+        if (r == null || mLockBehavior != LOCK_BEHAVIOR_ON_LEAVE) return;
+        if (PROTECTED_PACKAGES.contains(r.packageName) || isAuthActivity(r.mActivityComponent)) {
+            return;
+        }
+        if (mController == null || !mController.isAppLocked(r.packageName)) return;
+        if (!mUnlockedApps.contains(sessionKey(r))) return;
+        final Task task = r.getTask();
+        if (task != null) {
+            final ActivityRecord nextInTask = task.getTopNonFinishingActivity();
+            if (nextInTask != null && r.packageName.equals(nextInTask.packageName)) {
+                return;
+            }
+        }
+        markSessionLocked(r.packageName, r.mUserId);
     }
 
     /** Pushes masked snapshots to recents after a session is locked. */
@@ -929,8 +952,11 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         if (mAtms == null || mAtms.mWindowManager == null) return;
         synchronized (mAtms.mGlobalLock) {
             mAtms.mRootWindowContainer.forAllTasks(task -> {
-                if (!task.inRecents || task.mUserId != userId) return;
-                if (!packageName.equals(getRecentsPackageName(task))) return;
+                if (task.mUserId != userId) return;
+                if (!packageName.equals(getRecentsPackageName(task))
+                        && !packageName.equals(task.getBasePackageName())) {
+                    return;
+                }
                 evictRecentsPlaceholderSnapshot(task.mTaskId);
                 mAtms.mWindowManager.mTaskSnapshotController.removeAndDeleteSnapshot(
                         task.mTaskId, task.mUserId);

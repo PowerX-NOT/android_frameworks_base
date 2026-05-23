@@ -70,6 +70,9 @@ public interface IAppLockService {
     default void onAppDied(String packageName, int userId) {
     }
 
+    default void onActivityFinishing(ActivityRecord r) {
+    }
+
     default boolean hasAppLock(String packageName) {
         return false;
     }
