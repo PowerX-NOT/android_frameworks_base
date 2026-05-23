@@ -38,11 +38,14 @@ import android.window.ScreenCaptureInternal;
 import android.window.TaskSnapshot;
 import android.window.TaskSnapshotManager;
 
+import com.android.server.applock.AppLockSnapshotMasker;
 import com.android.server.policy.WindowManagerPolicy.ScreenOffListener;
 import com.android.server.wm.BaseAppSnapshotPersister.PersistInfoProvider;
 import com.android.window.flags.Flags;
 
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -167,15 +170,16 @@ class TaskSnapshotController extends AbsAppSnapshotController<Task, TaskSnapshot
     SnapshotSupplier getRecordSnapshotSupplier(Task task,
             @TaskSnapshot.ReferenceFlags int initialUsage) {
         return recordSnapshotInner(task, true /* allowAppTheme */, snapshot -> {
+            final TaskSnapshot masked = maskSnapshotForTask(task, snapshot);
             if (initialUsage != REFERENCE_NONE) {
-                snapshot.addReference(initialUsage);
+                masked.addReference(initialUsage);
             }
             if (!task.isActivityTypeHome()) {
                 final var updateCacheFunction = mOnlyCacheLowResSnapshot
-                        ? updateLowResToCacheFunction(task, snapshot.getId()) : null;
+                        ? updateLowResToCacheFunction(task, masked.getId()) : null;
                 mPersister.persistSnapshotAndConvert(
-                        task.mTaskId, task.mUserId, snapshot, updateCacheFunction);
-                task.onSnapshotChanged(snapshot);
+                        task.mTaskId, task.mUserId, masked, updateCacheFunction);
+                task.onSnapshotChanged(masked);
             }
         });
     }
@@ -264,8 +268,9 @@ class TaskSnapshotController extends AbsAppSnapshotController<Task, TaskSnapshot
     @Nullable
     TaskSnapshot getSnapshot(int taskId, boolean isLowResolution,
             @TaskSnapshot.ReferenceFlags int usage) {
-        return mCache.getSnapshot(taskId, isLowResolution
-                && mPersistInfoProvider.enableLowResSnapshots(), usage);
+        return maskSnapshotForTaskId(taskId,
+                mCache.getSnapshot(taskId, isLowResolution
+                        && mPersistInfoProvider.enableLowResSnapshots(), usage));
     }
 
     /**
@@ -279,7 +284,7 @@ class TaskSnapshotController extends AbsAppSnapshotController<Task, TaskSnapshot
                 && !mPersistInfoProvider.enableLowResSnapshots()) {
             retrieveResolution = TaskSnapshotManager.RESOLUTION_HIGH;
         }
-        return mCache.getSnapshot(taskId, retrieveResolution, usage);
+        return maskSnapshotForTaskId(taskId, mCache.getSnapshot(taskId, retrieveResolution, usage));
     }
 
     /**
@@ -289,8 +294,55 @@ class TaskSnapshotController extends AbsAppSnapshotController<Task, TaskSnapshot
     @Nullable
     TaskSnapshot getSnapshotFromDisk(int taskId, int userId,
             boolean isLowResolution, @TaskSnapshot.ReferenceFlags int usage) {
-        return mCache.getSnapshotFromDisk(taskId, userId, isLowResolution
+        final TaskSnapshot snapshot = mCache.getSnapshotFromDisk(taskId, userId, isLowResolution
                 && mPersistInfoProvider.enableLowResSnapshots(), usage);
+        if (snapshot == null) {
+            return null;
+        }
+        final android.content.ComponentName component = snapshot.getTopActivityComponent();
+        if (component == null) {
+            return snapshot;
+        }
+        return AppLockSnapshotMasker.maskIfNeeded(snapshot, component.getPackageName(),
+                mService.mContext);
+    }
+
+    void invalidateSnapshotsForLockedPackages(List<String> packageNames) {
+        if (packageNames == null || packageNames.isEmpty()) {
+            return;
+        }
+        final Set<String> locked = Set.copyOf(packageNames);
+        synchronized (mService.mGlobalLock) {
+            mService.mRoot.forAllTasks(task -> {
+                final ActivityRecord top = task.getTopNonFinishingActivity();
+                if (top != null && locked.contains(top.packageName)) {
+                    removeAndDeleteSnapshot(task.mTaskId, task.mUserId);
+                }
+            });
+        }
+    }
+
+    @Nullable
+    private TaskSnapshot maskSnapshotForTaskId(int taskId, @Nullable TaskSnapshot snapshot) {
+        if (snapshot == null) {
+            return null;
+        }
+        synchronized (mService.mGlobalLock) {
+            final Task task = mService.mRoot.anyTaskForId(taskId);
+            return maskSnapshotForTask(task, snapshot);
+        }
+    }
+
+    @Nullable
+    private TaskSnapshot maskSnapshotForTask(@Nullable Task task, @Nullable TaskSnapshot snapshot) {
+        if (snapshot == null || task == null) {
+            return snapshot;
+        }
+        final ActivityRecord top = task.getTopNonFinishingActivity();
+        if (top == null) {
+            return snapshot;
+        }
+        return AppLockSnapshotMasker.maskIfNeeded(snapshot, top.packageName, mService.mContext);
     }
 
     /**

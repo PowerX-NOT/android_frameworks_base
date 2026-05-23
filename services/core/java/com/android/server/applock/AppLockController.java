@@ -21,6 +21,8 @@ import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Slog;
 
+import com.android.server.wm.AppLockService;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -116,6 +118,7 @@ public class AppLockController {
             }
         }
         Slog.i(TAG, "Loaded locked packages: " + mLockedPackages.size());
+        refreshRecentsSnapshots();
     }
 
     public boolean isEnabled() {
@@ -128,6 +131,7 @@ public class AppLockController {
                     enabled ? 1 : 0, UserHandle.USER_SYSTEM);
         });
         mEnabled = enabled;
+        refreshRecentsSnapshots();
     }
 
     public boolean isAppLocked(String packageName) {
@@ -158,6 +162,7 @@ public class AppLockController {
                 if (uid >= 0) {
                     broadcastPackageChange(packageName, uid);
                 }
+                refreshRecentsSnapshots();
             }
         }
     }
@@ -171,6 +176,7 @@ public class AppLockController {
                 if (uid >= 0) {
                     broadcastPackageChange(packageName, uid);
                 }
+                refreshRecentsSnapshots();
             }
         }
     }
@@ -235,8 +241,13 @@ public class AppLockController {
         synchronized (this) {
             if (mLockedPackages.remove(packageName)) {
                 saveConfigToSettings();
+                refreshRecentsSnapshots();
             }
         }
+    }
+
+    private void refreshRecentsSnapshots() {
+        AppLockService.get().invalidateLockedAppSnapshots();
     }
 
     private void saveConfigToSettings() {

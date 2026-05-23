@@ -277,6 +277,24 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     }
 
     /**
+     * Whether recents thumbnails should show the App Lock mask for this package (always when
+     * listed, independent of session relock policy).
+     */
+    public boolean shouldMaskRecentsSnapshot(String packageName) {
+        return mController != null && mController.isEnabled()
+                && mController.isAppLocked(packageName);
+    }
+
+    /** Drops cached task snapshots so recents picks up App Lock masking changes. */
+    public void invalidateLockedAppSnapshots() {
+        if (mAtms == null || mController == null) {
+            return;
+        }
+        mAtms.mWindowManager.mTaskSnapshotController.invalidateSnapshotsForLockedPackages(
+                mController.getLockedPackages());
+    }
+
+    /**
      * Returns true when the package is App Lock protected and the user has not unlocked
      * the current session on {@code userId}.
      */
@@ -536,9 +554,8 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             if (isAuthActivity(component)) {
                 rti.isTopAppLocked = true;
             } else if (mController.isAppLocked(packageName)) {
-                String key = sessionKey(userId, packageName);
-                rti.isTopAppLocked = !(mLockBehavior == LOCK_BEHAVIOR_ON_LEAVE
-                        && mUnlockedApps.contains(key));
+                // Recents always mask apps in the App Lock list, regardless of relock policy.
+                rti.isTopAppLocked = true;
             }
         } finally {
             Binder.restoreCallingIdentity(identity);
