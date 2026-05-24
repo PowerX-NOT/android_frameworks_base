@@ -201,9 +201,13 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                     LOCK_BEHAVIOR_ON_LEAVE, UserHandle.USER_SYSTEM);
             mLockTimeout = Settings.Secure.getIntForUser(resolver, SETTING_LOCK_TIMEOUT,
                     AppLockManager.DEFAULT_LOCK_TIMEOUT, UserHandle.USER_SYSTEM);
-            mHideNotificationContent = Settings.Secure.getIntForUser(resolver,
+            boolean hideNotificationContent = Settings.Secure.getIntForUser(resolver,
                     SETTING_HIDE_NOTIFICATION_CONTENT, 1, UserHandle.USER_SYSTEM) != 0;
-            notifyNotificationHidingChanged();
+            boolean hideChanged = hideNotificationContent != mHideNotificationContent;
+            mHideNotificationContent = hideNotificationContent;
+            if (hideChanged) {
+                notifyNotificationHidingChanged();
+            }
         }
     }
 
@@ -267,8 +271,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     public void setHideNotificationContent(boolean hide) {
         enforceSettingsManager();
         putSecureIntSetting(SETTING_HIDE_NOTIFICATION_CONTENT, hide ? 1 : 0);
-        mHideNotificationContent = hide;
-        notifyNotificationHidingChanged();
+        // In-memory state and listener updates are applied in SettingsObserver.onChange().
     }
 
     /** Whether notification content should be hidden for this locked app. */
@@ -321,10 +324,29 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     }
 
     private void notifyNotificationHidingChanged() {
-        notifyAppLockStateChanged("", false);
-        if (mController == null) return;
-        for (String packageName : mController.getLockedPackages()) {
-            notifyAppLockStateChanged(packageName, true);
+        final List<String> lockedPackages = mController != null
+                ? mController.getLockedPackages() : List.of();
+        final int count = mAppLockStateListeners.beginBroadcast();
+        try {
+            for (int i = 0; i < count; i++) {
+                try {
+                    mAppLockStateListeners.getBroadcastItem(i).onAppLockStateChanged("", false);
+                } catch (RemoteException e) {
+                    Slog.w(TAG, "app lock state listener failed", e);
+                }
+            }
+            for (String packageName : lockedPackages) {
+                for (int i = 0; i < count; i++) {
+                    try {
+                        mAppLockStateListeners.getBroadcastItem(i)
+                                .onAppLockStateChanged(packageName, true);
+                    } catch (RemoteException e) {
+                        Slog.w(TAG, "app lock state listener failed", e);
+                    }
+                }
+            }
+        } finally {
+            mAppLockStateListeners.finishBroadcast();
         }
     }
 
@@ -865,15 +887,19 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     }
 
     private void notifyAppLockStateChanged(String packageName, boolean locked) {
-        int count = mAppLockStateListeners.beginBroadcast();
-        for (int i = 0; i < count; i++) {
-            try {
-                mAppLockStateListeners.getBroadcastItem(i).onAppLockStateChanged(packageName, locked);
-            } catch (RemoteException e) {
-                Slog.w(TAG, "app lock state listener failed", e);
+        final int count = mAppLockStateListeners.beginBroadcast();
+        try {
+            for (int i = 0; i < count; i++) {
+                try {
+                    mAppLockStateListeners.getBroadcastItem(i)
+                            .onAppLockStateChanged(packageName, locked);
+                } catch (RemoteException e) {
+                    Slog.w(TAG, "app lock state listener failed", e);
+                }
             }
+        } finally {
+            mAppLockStateListeners.finishBroadcast();
         }
-        mAppLockStateListeners.finishBroadcast();
     }
 
     private void notifyAppUnlocked(String packageName, int userId) {
