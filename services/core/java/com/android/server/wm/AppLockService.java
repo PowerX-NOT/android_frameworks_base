@@ -536,9 +536,8 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             if (isAuthActivity(component)) {
                 rti.isTopAppLocked = true;
             } else if (mController.isAppLocked(packageName)) {
-                String key = sessionKey(userId, packageName);
-                rti.isTopAppLocked = !(mLockBehavior == LOCK_BEHAVIOR_ON_LEAVE
-                        && mUnlockedApps.contains(key));
+                // Always mask recents for App Lock protected apps (ignore session/relock).
+                rti.isTopAppLocked = true;
             }
         } finally {
             Binder.restoreCallingIdentity(identity);
