@@ -42,6 +42,7 @@ import com.android.internal.app.IAppLockManager;
 import com.android.internal.app.IAppLockStateListener;
 import com.android.internal.app.IAppSessionListener;
 import com.android.server.applock.AppLockController;
+import com.android.server.policy.PermissionPolicyInternal;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -511,8 +512,9 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         // clearUnlockedApp() may run without a matching onAppFocusChanged relock.
         if (prev != null && prev.finishing && mLockBehavior == LOCK_BEHAVIOR_ON_LEAVE
                 && mUnlockedApps.contains(sessionKey(prev))) {
-            if (next.isActivityTypeHomeOrRecents()
-                    || !prev.packageName.equals(next.packageName)) {
+            if ((next.isActivityTypeHomeOrRecents()
+                    || !prev.packageName.equals(next.packageName))
+                    && !shouldIgnoreFocusChangeForRelock(next)) {
                 markSessionLocked(prev.packageName, prev.mUserId);
             }
         }
@@ -613,6 +615,10 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     public void onAppFocusChanged(ActivityRecord newFocus, Task newTask) {
         if (!hasLockedPackages()) {
             mLastFocusedAppKey = null;
+            return;
+        }
+        if (newFocus != null && shouldIgnoreFocusChangeForRelock(newFocus)) {
+            lockTopApp(newTask, "AppLock.onAppFocusChanged");
             return;
         }
         String newKey = newFocus != null ? sessionKey(newFocus) : null;
@@ -822,6 +828,25 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
 
     private static String sessionKey(ActivityRecord r) {
         return sessionKey(r.mUserId, r.packageName);
+    }
+
+    /**
+     * System overlays (runtime permission grant, App Lock auth) are not treated as leaving the
+     * previously focused locked app for ON_LEAVE relock.
+     */
+    private boolean shouldIgnoreFocusChangeForRelock(ActivityRecord newFocus) {
+        if (newFocus == null) {
+            return false;
+        }
+        if (isAuthActivity(newFocus.mActivityComponent)) {
+            return true;
+        }
+        final Intent intent = newFocus.intent;
+        if (intent == null || mAtms == null) {
+            return false;
+        }
+        PermissionPolicyInternal policy = mAtms.getPermissionPolicyInternal();
+        return policy != null && policy.isIntentToPermissionDialog(intent);
     }
 
     private void markTaskSessionsLocked(Task task) {
