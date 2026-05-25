@@ -39,6 +39,7 @@ import android.text.TextUtils;
 import android.util.Slog;
 import android.widget.Toast;
 
+import com.android.internal.R;
 import com.android.internal.app.IAppLockManager;
 import com.android.internal.app.IAppLockStateListener;
 import com.android.internal.app.IAppSessionListener;
@@ -676,6 +677,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                     + " " + sessionSnapshot(packageName, userId));
             if (resultCode == Activity.RESULT_OK && packageName != null) {
                 clearAuthCancelTime(pendingKey);
+                applyUnlockFadeTransition(r);
                 markSessionUnlocked(packageName, userId);
                 if (r.getTask() != null) {
                     finishAllAuthActivitiesInTask(r.getTask(), r);
@@ -1588,6 +1590,22 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                 }
             }
         });
+    }
+
+    /**
+     * Fade the unlocked app in when auth closes instead of the default task slide transition.
+     */
+    private void applyUnlockFadeTransition(ActivityRecord auth) {
+        if (auth == null) {
+            return;
+        }
+        final int fadeIn = R.anim.fade_in;
+        final int fadeOut = R.anim.fade_out;
+        auth.overrideCustomTransition(false /* close */, fadeIn, fadeOut, 0);
+        final ActivityRecord app = auth.resultTo;
+        if (app != null) {
+            app.overrideCustomTransition(true /* open */, fadeIn, fadeOut, 0);
+        }
     }
 
     private void abortAnimation(ActivityRecord r) {
