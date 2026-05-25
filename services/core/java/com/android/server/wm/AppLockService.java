@@ -197,10 +197,16 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         @Override
         public void onChange(boolean selfChange) {
             ContentResolver resolver = mContext.getContentResolver();
-            mLockBehavior = Settings.Secure.getIntForUser(resolver, SETTING_LOCK_BEHAVIOR,
+            int newBehavior = Settings.Secure.getIntForUser(resolver, SETTING_LOCK_BEHAVIOR,
                     LOCK_BEHAVIOR_ON_LEAVE, UserHandle.USER_SYSTEM);
-            mLockTimeout = Settings.Secure.getIntForUser(resolver, SETTING_LOCK_TIMEOUT,
+            int newTimeout = Settings.Secure.getIntForUser(resolver, SETTING_LOCK_TIMEOUT,
                     AppLockManager.DEFAULT_LOCK_TIMEOUT, UserHandle.USER_SYSTEM);
+            boolean policyChanged = newBehavior != mLockBehavior || newTimeout != mLockTimeout;
+            mLockBehavior = newBehavior;
+            mLockTimeout = newTimeout;
+            if (policyChanged) {
+                applyLockPolicyChange();
+            }
             boolean hideNotificationContent = Settings.Secure.getIntForUser(resolver,
                     SETTING_HIDE_NOTIFICATION_CONTENT, 1, UserHandle.USER_SYSTEM) != 0;
             boolean hideChanged = hideNotificationContent != mHideNotificationContent;
@@ -247,7 +253,10 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     public void setLockBehavior(int behavior) {
         enforceSettingsManager();
         putSecureIntSetting(SETTING_LOCK_BEHAVIOR, behavior);
-        mLockBehavior = behavior;
+        if (behavior != mLockBehavior) {
+            mLockBehavior = behavior;
+            applyLockPolicyChange();
+        }
     }
 
     @Override
@@ -259,7 +268,10 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     public void setLockTimeout(int timeoutSeconds) {
         enforceSettingsManager();
         putSecureIntSetting(SETTING_LOCK_TIMEOUT, timeoutSeconds);
-        mLockTimeout = timeoutSeconds;
+        if (timeoutSeconds != mLockTimeout) {
+            mLockTimeout = timeoutSeconds;
+            applyLockPolicyChange();
+        }
     }
 
     @Override
@@ -504,8 +516,10 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                 markSessionLocked(prev.packageName, prev.mUserId);
             }
         }
-        clearUnlockedApp(next);
-        if (!isAppLocked(next)) return false;
+        if (!isAppLocked(next)) {
+            clearUnlockedApp(next);
+            return false;
+        }
         if (!startAuthPrompt(next, "AppLock.checkLockApp")) return false;
         if (prev != null && prev.finishing) {
             prev.setVisibility(false);
@@ -837,6 +851,12 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             cancelTimeoutLock(key);
             notifyAppLocked(packageName, userId);
         }
+    }
+
+    /** Clears in-memory unlock sessions when relock policy changes. */
+    private void applyLockPolicyChange() {
+        mLastFocusedAppKey = null;
+        lockAllSessionsAndNotify();
     }
 
     private void lockAllSessionsAndNotify() {
