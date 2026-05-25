@@ -666,7 +666,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                 markSessionLocked(lastPaused.packageName, lastPaused.mUserId);
             }
             if (task.realActivity != null) {
-                markSessionLocked(task.realActivity.getPackageName(), task.effectiveUid);
+                markSessionLocked(task.realActivity.getPackageName(), task.mUserId);
             }
         }
     }
@@ -700,22 +700,21 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
 
     @Override
     public void removeTask(Task task, String reason) {
-        if (task == null || !"remove-task".equals(reason)
-                || mLockBehavior != LOCK_BEHAVIOR_ON_LEAVE || mUnlockedApps.isEmpty()) {
+        if (task == null || mUnlockedApps.isEmpty()) return;
+
+        if (mLockBehavior == LOCK_BEHAVIOR_ON_KILL) {
+            markTaskSessionsLocked(task);
+            return;
+        }
+
+        if (mLockBehavior != LOCK_BEHAVIOR_ON_LEAVE || !"remove-task".equals(reason)) {
             return;
         }
         if (!WindowConfiguration.inMultiWindowMode(task.getWindowingMode())
                 && !WindowConfiguration.isFloating(task.getWindowingMode())) {
             return;
         }
-        ActivityRecord r = task.topRunningActivityLocked();
-        if (r != null) markSessionLocked(r.packageName, r.mUserId);
-        if (task.mLastPausedActivity != null) {
-            markSessionLocked(task.mLastPausedActivity.packageName, task.mLastPausedActivity.mUserId);
-        }
-        if (task.realActivity != null) {
-            markSessionLocked(task.realActivity.getPackageName(), task.effectiveUid);
-        }
+        markTaskSessionsLocked(task);
     }
 
     @Override
@@ -823,6 +822,19 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
 
     private static String sessionKey(ActivityRecord r) {
         return sessionKey(r.mUserId, r.packageName);
+    }
+
+    private void markTaskSessionsLocked(Task task) {
+        ActivityRecord r = task.topRunningActivityLocked();
+        if (r != null) {
+            markSessionLocked(r.packageName, r.mUserId);
+        }
+        if (task.mLastPausedActivity != null) {
+            markSessionLocked(task.mLastPausedActivity.packageName, task.mLastPausedActivity.mUserId);
+        }
+        if (task.realActivity != null) {
+            markSessionLocked(task.realActivity.getPackageName(), task.mUserId);
+        }
     }
 
     private void relockFromSessionKey(String key) {
