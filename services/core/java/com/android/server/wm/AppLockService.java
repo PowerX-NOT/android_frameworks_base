@@ -85,6 +85,12 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     /** Collapse duplicate checkLockApp() from resume + setResumedActivity in one pass. */
     private static final long CHECK_LOCK_DEBOUNCE_MS = 100L;
 
+    /**
+     * Suppress only automatic WM re-resume right after auth cancel (prev=null). User launches
+     * from home/recents clear this immediately so reopen is never delayed.
+     */
+    private static final long AUTH_CANCEL_RELAUNCH_COOLDOWN_MS = 300L;
+
     /** Packages that must never be subject to app lock. */
     private static final Set<String> PROTECTED_PACKAGES = Set.of(
             "android",
@@ -109,6 +115,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     private final Set<String> mPendingUnlocks = new HashSet<>();
     private final Map<String, Long> mUnlockTimestamps = new HashMap<>();
     private final Map<String, Runnable> mTimeoutRunnables = new HashMap<>();
+    private final Map<String, Long> mLastAuthCancelTime = new HashMap<>();
     private final Object mCheckLockDedupeLock = new Object();
     private String mLastCheckLockToken;
     private boolean mLastCheckLockBlocked;
@@ -629,6 +636,17 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             }
             return false;
         }
+        final String key = sessionKey(next);
+        if (prev != null && (prev.isActivityTypeHomeOrRecents()
+                || !prev.packageName.equals(next.packageName))) {
+            clearAuthCancelTime(key);
+        }
+        if (isRecursiveRelaunchAfterAuthCancel(next, prev)) {
+            debugSession("checkLockApp block recursive relaunch after auth cancel pkg="
+                    + next.packageName);
+            blockLockedAppAfterAuthCancel(next, prev);
+            return true;
+        }
         finishPermissionDialogsInTask(next.getTask());
         if (!startAuthPrompt(next, "AppLock.checkLockApp")) {
             debugSession("checkLockApp startAuthPrompt failed pkg=" + next.packageName);
@@ -657,14 +675,21 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                     + " resultTo=" + (r.resultTo != null ? r.resultTo.packageName : "null")
                     + " " + sessionSnapshot(packageName, userId));
             if (resultCode == Activity.RESULT_OK && packageName != null) {
+                clearAuthCancelTime(pendingKey);
                 markSessionUnlocked(packageName, userId);
                 if (r.getTask() != null) {
                     finishAllAuthActivitiesInTask(r.getTask(), r);
                 }
-            } else if (r.resultTo != null) {
-                debugSession("checkUnlockApp canceled, finishing resultTo="
-                        + r.resultTo.packageName);
-                r.resultTo.finishIfPossible("applock-canceled", false);
+            } else {
+                recordAuthCancelTime(pendingKey);
+                if (r.getTask() != null) {
+                    finishAllAuthActivitiesInTask(r.getTask(), null);
+                }
+                if (r.resultTo != null) {
+                    debugSession("checkUnlockApp canceled, finishing resultTo="
+                            + r.resultTo.packageName);
+                    r.resultTo.finishIfPossible("applock-canceled", false);
+                }
             }
             return true;
         } catch (Exception e) {
@@ -1032,6 +1057,62 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                     + target.packageName);
         }
         return true;
+    }
+
+    private boolean isWithinAuthCancelCooldown(String sessionKey) {
+        synchronized (mLastAuthCancelTime) {
+            final Long canceledAt = mLastAuthCancelTime.get(sessionKey);
+            if (canceledAt == null) {
+                return false;
+            }
+            if (SystemClock.uptimeMillis() - canceledAt < AUTH_CANCEL_RELAUNCH_COOLDOWN_MS) {
+                return true;
+            }
+            mLastAuthCancelTime.remove(sessionKey);
+            return false;
+        }
+    }
+
+    private static boolean authActivityMatchesPackage(ActivityRecord auth, String packageName) {
+        if (auth.intent == null || packageName == null) {
+            return true;
+        }
+        return packageName.equals(auth.intent.getStringExtra(EXTRA_LOCKED_PACKAGE));
+    }
+
+    /**
+     * Blocks only the automatic re-resume loop after cancel, never a fresh open from launcher.
+     */
+    private boolean isRecursiveRelaunchAfterAuthCancel(ActivityRecord next, ActivityRecord prev) {
+        if (prev != null && prev.finishing && isAuthActivity(prev.mActivityComponent)) {
+            return authActivityMatchesPackage(prev, next.packageName);
+        }
+        // Same-task WM bounce right after cancel (prev=null); not a launcher-driven open.
+        return prev == null && isWithinAuthCancelCooldown(sessionKey(next));
+    }
+
+    private void recordAuthCancelTime(String sessionKey) {
+        synchronized (mLastAuthCancelTime) {
+            mLastAuthCancelTime.put(sessionKey, SystemClock.uptimeMillis());
+        }
+        debugSession("recordAuthCancelTime key=" + sessionKey);
+    }
+
+    private void clearAuthCancelTime(String sessionKey) {
+        synchronized (mLastAuthCancelTime) {
+            mLastAuthCancelTime.remove(sessionKey);
+        }
+    }
+
+    private void blockLockedAppAfterAuthCancel(ActivityRecord next, ActivityRecord prev) {
+        synchronized (mPendingUnlocks) {
+            mPendingUnlocks.remove(sessionKey(next));
+        }
+        finishAuthActivitiesForPackage(next.packageName, next.mUserId);
+        if (prev != null && prev.finishing) {
+            prev.setVisibility(false);
+        }
+        next.finishIfPossible("applock-auth-canceled", false);
     }
 
     private boolean startAuthPrompt(ActivityRecord target, String reason) {
