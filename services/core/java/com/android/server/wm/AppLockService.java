@@ -169,6 +169,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
 
     private void cleanupPackage(String packageName) {
         if (mController == null) return;
+        debugSession("cleanupPackage pkg=" + packageName + " " + sessionSnapshot(packageName, 0));
         mController.cleanupPackage(packageName);
         notifyAppLockStateChanged(packageName, false);
 
@@ -465,6 +466,12 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     public boolean isAppLocked(ActivityRecord r) {
         if (r == null || !hasLockedPackages() || r.isNoDisplay()
                 || r.isActivityTypeHomeOrRecents()) {
+            if (r != null && mController != null && mController.isAppLocked(r.packageName)) {
+                debugSession("isAppLocked(ActivityRecord)=false pkg=" + r.packageName
+                        + " noDisplay=" + r.isNoDisplay()
+                        + " homeOrRecents=" + r.isActivityTypeHomeOrRecents()
+                        + " hasLockedPackages=" + hasLockedPackages());
+            }
             return false;
         }
 
@@ -491,24 +498,46 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             if (lastUsed != null
                     && (SystemClock.elapsedRealtime() - lastUsed) > (mLockTimeout * 1000L)) {
                 sessionUnlocked = false;
+                debugSession("isAppLocked timeout expired pkg=" + packageName + " "
+                        + sessionSnapshot(packageName, userId));
             }
         }
 
-        return mKeyguardDone && !sessionUnlocked;
+        boolean locked = mKeyguardDone && !sessionUnlocked;
+        if (!locked) {
+            debugSession("isAppLocked=false pkg=" + packageName + " reason="
+                    + explainNotLocked(packageName, uid) + " " + sessionSnapshot(packageName, userId));
+        }
+        return locked;
     }
 
     @Override
     public void lockTopApp(Task task, String reason) {
         if (task == null || !hasLockedPackages()) return;
         ActivityRecord r = task.topRunningActivityLocked();
-        if (!isAppLocked(r)) return;
-        if (mUnlockedApps.contains(sessionKey(r))) return;
+        if (r == null) return;
+        if (!isAppLocked(r)) {
+            if (mController.isAppLocked(r.packageName)) {
+                debugSession("lockTopApp skip not locked reason=" + reason + " pkg="
+                        + r.packageName + " " + explainNotLocked(r.packageName, r.getUid()));
+            }
+            return;
+        }
+        if (mUnlockedApps.contains(sessionKey(r))) {
+            debugSession("lockTopApp skip already unlocked reason=" + reason + " pkg="
+                    + r.packageName + " " + sessionSnapshot(r.packageName, r.mUserId));
+            return;
+        }
         startAuthPrompt(r, reason);
     }
 
     @Override
     public boolean checkLockApp(ActivityRecord prev, ActivityRecord next) {
         if (next == null) return false;
+        debugSession("checkLockApp enter next=" + next.packageName + " prev="
+                + (prev != null ? prev.packageName : "null")
+                + (prev != null && prev.finishing ? " (finishing)" : "")
+                + " " + sessionSnapshot(next.packageName, next.mUserId));
         // Back finishes the previous activity before focus moves; relock here because
         // clearUnlockedApp() may run without a matching onAppFocusChanged relock.
         if (prev != null && prev.finishing && mLockBehavior == LOCK_BEHAVIOR_ON_LEAVE
@@ -516,17 +545,24 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             if ((next.isActivityTypeHomeOrRecents()
                     || !prev.packageName.equals(next.packageName))
                     && !shouldIgnoreFocusChangeForRelock(next)) {
+                debugSession("checkLockApp relock finishing prev=" + prev.packageName);
                 markSessionLocked(prev.packageName, prev.mUserId);
             }
         }
         if (!isAppLocked(next)) {
+            debugSession("checkLockApp allow resume without auth pkg=" + next.packageName
+                    + " reason=" + explainNotLocked(next.packageName, next.getUid()));
             if (!shouldIgnoreFocusChangeForRelock(next)) {
                 clearUnlockedApp(next);
             }
             return false;
         }
         finishPermissionDialogsInTask(next.getTask());
-        if (!startAuthPrompt(next, "AppLock.checkLockApp")) return false;
+        if (!startAuthPrompt(next, "AppLock.checkLockApp")) {
+            debugSession("checkLockApp startAuthPrompt failed pkg=" + next.packageName);
+            return false;
+        }
+        debugSession("checkLockApp blocking resume for auth pkg=" + next.packageName);
         if (prev != null && prev.finishing) {
             prev.setVisibility(false);
         }
@@ -545,9 +581,14 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             synchronized (mPendingUnlocks) {
                 mPendingUnlocks.remove(pendingKey);
             }
+            debugSession("checkUnlockApp pkg=" + packageName + " resultCode=" + resultCode
+                    + " resultTo=" + (r.resultTo != null ? r.resultTo.packageName : "null")
+                    + " " + sessionSnapshot(packageName, userId));
             if (resultCode == Activity.RESULT_OK && packageName != null) {
                 markSessionUnlocked(packageName, userId);
             } else if (r.resultTo != null) {
+                debugSession("checkUnlockApp canceled, finishing resultTo="
+                        + r.resultTo.packageName);
                 r.resultTo.finishIfPossible("applock-canceled", false);
             }
             return true;
@@ -626,10 +667,15 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             return;
         }
         String newKey = newFocus != null ? sessionKey(newFocus) : null;
+        debugSession("onAppFocusChanged focus="
+                + (newFocus != null ? newFocus.packageName : "null")
+                + " newKey=" + newKey + " lastKey=" + mLastFocusedAppKey);
         if (mLastFocusedAppKey != null && !mLastFocusedAppKey.equals(newKey)) {
             scheduleTimeoutLock(mLastFocusedAppKey);
             if (mLockBehavior == LOCK_BEHAVIOR_ON_LEAVE
                     && mUnlockedApps.contains(mLastFocusedAppKey)) {
+                debugSession("onAppFocusChanged relock on leave lastKey=" + mLastFocusedAppKey
+                        + " newKey=" + newKey);
                 relockFromSessionKey(mLastFocusedAppKey);
             }
         }
@@ -684,6 +730,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     @Override
     public void clearUnlockedApp() {
         if (mLockBehavior != LOCK_BEHAVIOR_ON_LEAVE || mUnlockedApps.isEmpty()) return;
+        debugSession("clearUnlockedApp all sessions=" + mUnlockedApps);
         lockAllSessionsAndNotify();
         lockVisibleMultiWindowApps(mAtms.mWindowManager.getDefaultDisplayContentLocked());
     }
@@ -696,6 +743,8 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                 return;
             }
             boolean wasUnlocked = mUnlockedApps.contains(sessionKey(r));
+            debugSession("clearUnlockedApp record pkg=" + r.packageName + " wasUnlocked="
+                    + wasUnlocked);
             clearUnlockedApp();
             if (wasUnlocked) {
                 markSessionUnlocked(r.packageName, r.mUserId);
@@ -770,11 +819,24 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         if (target == null || mAtms == null) return false;
 
         String pendingKey = sessionKey(target);
-        if (mUnlockedApps.contains(pendingKey)) return true;
+        if (mUnlockedApps.contains(pendingKey)) {
+            debugSession("startAuthPrompt skip session already unlocked reason=" + reason
+                    + " pkg=" + target.packageName + " " + sessionSnapshot(target.packageName,
+                    target.mUserId));
+            return true;
+        }
 
         synchronized (mPendingUnlocks) {
-            if (!mPendingUnlocks.add(pendingKey)) return true;
+            if (!mPendingUnlocks.add(pendingKey)) {
+                debugSession("startAuthPrompt skip auth already pending reason=" + reason
+                        + " pkg=" + target.packageName);
+                return true;
+            }
         }
+
+        debugSession("startAuthPrompt launching auth reason=" + reason + " pkg="
+                + target.packageName + " hasProcess=" + (target.app != null) + " "
+                + sessionSnapshot(target.packageName, target.mUserId));
 
         finishPermissionDialogsInTask(target.getTask());
 
@@ -802,12 +864,14 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                         "", target.token, target.resultWho, mRequestCode);
             }
             abortAnimation(target);
+            debugSession("startAuthPrompt started auth for pkg=" + target.packageName);
             return true;
         } catch (Exception e) {
             Slog.w(TAG, "startAuthPrompt failed for " + target.packageName, e);
             synchronized (mPendingUnlocks) {
                 mPendingUnlocks.remove(pendingKey);
             }
+            debugSession("startAuthPrompt failed pkg=" + target.packageName + " " + e.getMessage());
             return false;
         }
     }
@@ -834,6 +898,72 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
 
     private static String sessionKey(ActivityRecord r) {
         return sessionKey(r.mUserId, r.packageName);
+    }
+
+    private static void debugSession(String msg) {
+        Slog.i(TAG, "[Session] " + msg);
+    }
+
+    private String sessionSnapshot(String packageName, int userId) {
+        String key = sessionKey(userId, packageName);
+        boolean pending;
+        synchronized (mPendingUnlocks) {
+            pending = mPendingUnlocks.contains(key);
+        }
+        return "{key=" + key + " unlocked=" + mUnlockedApps.contains(key)
+                + " pendingAuth=" + pending
+                + " behavior=" + lockBehaviorName(mLockBehavior)
+                + " keyguardDone=" + mKeyguardDone
+                + " lastFocus=" + mLastFocusedAppKey
+                + " unlockedSessions=" + mUnlockedApps.size() + "}";
+    }
+
+    private static String lockBehaviorName(int behavior) {
+        switch (behavior) {
+            case LOCK_BEHAVIOR_TIMEOUT:
+                return "timeout";
+            case LOCK_BEHAVIOR_ON_SCREEN_OFF:
+                return "screen_off";
+            case LOCK_BEHAVIOR_ON_KILL:
+                return "on_kill";
+            default:
+                return "on_leave";
+        }
+    }
+
+    private String explainNotLocked(String packageName, int uid) {
+        if (mController == null || !mController.isEnabled()) {
+            return "applock_disabled";
+        }
+        if (PROTECTED_PACKAGES.contains(packageName)) {
+            return "protected_package";
+        }
+        if (!mController.isAppLocked(packageName)) {
+            return "not_in_lock_list";
+        }
+        int userId = UserHandle.getUserId(uid);
+        String key = sessionKey(userId, packageName);
+        if (!mKeyguardDone) {
+            return "keyguard_not_done";
+        }
+        if (mUnlockedApps.contains(key)) {
+            if (mLockBehavior == LOCK_BEHAVIOR_TIMEOUT) {
+                Long lastUsed = mUnlockTimestamps.get(key);
+                if (lastUsed != null
+                        && (SystemClock.elapsedRealtime() - lastUsed)
+                        <= (mLockTimeout * 1000L)) {
+                    return "session_unlocked_within_timeout";
+                }
+                return "session_unlocked_timeout_stale";
+            }
+            return "session_unlocked";
+        }
+        synchronized (mPendingUnlocks) {
+            if (mPendingUnlocks.contains(key)) {
+                return "auth_pending_but_session_locked";
+            }
+        }
+        return "should_be_locked";
     }
 
     /**
@@ -951,6 +1081,10 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         if (mUnlockedApps.add(key)) {
             mUnlockTimestamps.put(key, SystemClock.elapsedRealtime());
             notifyAppUnlocked(packageName, userId);
+            debugSession("markSessionUnlocked pkg=" + packageName + " "
+                    + sessionSnapshot(packageName, userId));
+        } else {
+            debugSession("markSessionUnlocked noop already unlocked pkg=" + packageName);
         }
     }
 
@@ -960,17 +1094,26 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             mUnlockTimestamps.remove(key);
             cancelTimeoutLock(key);
             notifyAppLocked(packageName, userId);
+            debugSession("markSessionLocked pkg=" + packageName + " "
+                    + sessionSnapshot(packageName, userId));
+        } else {
+            debugSession("markSessionLocked noop already locked pkg=" + packageName + " "
+                    + sessionSnapshot(packageName, userId));
         }
     }
 
     /** Clears in-memory unlock sessions when relock policy changes. */
     private void applyLockPolicyChange() {
+        debugSession("applyLockPolicyChange clearing sessions behavior="
+                + lockBehaviorName(mLockBehavior) + " unlockedCount=" + mUnlockedApps.size());
         mLastFocusedAppKey = null;
         lockAllSessionsAndNotify();
     }
 
     private void lockAllSessionsAndNotify() {
         if (mUnlockedApps.isEmpty()) return;
+        debugSession("lockAllSessionsAndNotify count=" + mUnlockedApps.size()
+                + " sessions=" + mUnlockedApps);
         String[] keys = mUnlockedApps.toArray(new String[0]);
         mUnlockedApps.clear();
         mUnlockTimestamps.clear();
