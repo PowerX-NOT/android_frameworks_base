@@ -89,6 +89,7 @@ import com.android.internal.util.IntPair;
 import com.android.internal.util.function.pooled.PooledLambda;
 import com.android.server.FgThread;
 import com.android.server.LocalServices;
+import com.android.server.wm.AppLockService;
 import com.android.server.PermissionThread;
 import com.android.server.SystemService;
 import com.android.server.notification.NotificationManagerInternal;
@@ -1268,6 +1269,10 @@ public final class PermissionPolicyService extends SystemService {
 
         private void launchNotificationPermissionRequestDialog(String pkgName, UserHandle user,
                 int taskId, @Nullable ActivityInterceptorInfo info) {
+            if (AppLockService.get().shouldBlockPermissionDialogStart(
+                    pkgName, user.getIdentifier())) {
+                return;
+            }
             Intent grantPermission = mPackageManager
                     .buildRequestPermissionsIntent(new String[] { POST_NOTIFICATIONS });
             // Prevent the front-most activity entering pip due to overlay activity started on top.

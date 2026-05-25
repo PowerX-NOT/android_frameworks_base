@@ -6,6 +6,7 @@ package com.android.server.wm;
 import static android.app.AppLockManager.AppLockState.LOCKED;
 import static android.app.AppLockManager.AppLockState.NONE;
 import static android.app.AppLockManager.AppLockState.UNLOCKED;
+import static android.content.pm.PackageManager.ACTION_REQUEST_PERMISSIONS_FOR_OTHER;
 
 import android.app.Activity;
 import android.app.ActivityManager;
@@ -524,6 +525,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             }
             return false;
         }
+        finishPermissionDialogsInTask(next.getTask());
         if (!startAuthPrompt(next, "AppLock.checkLockApp")) return false;
         if (prev != null && prev.finishing) {
             prev.setVisibility(false);
@@ -620,6 +622,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             return;
         }
         if (newFocus != null && shouldIgnoreFocusChangeForRelock(newFocus)) {
+            deferPermissionDialogUntilUnlocked(newFocus);
             return;
         }
         String newKey = newFocus != null ? sessionKey(newFocus) : null;
@@ -773,6 +776,8 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             if (!mPendingUnlocks.add(pendingKey)) return true;
         }
 
+        finishPermissionDialogsInTask(target.getTask());
+
         try {
             Intent intent = new Intent(getConfirmIntent());
             intent.putExtra(EXTRA_LOCKED_UID, target.getUid());
@@ -829,6 +834,73 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
 
     private static String sessionKey(ActivityRecord r) {
         return sessionKey(r.mUserId, r.packageName);
+    }
+
+    /**
+     * Returns whether runtime permission UI for {@code packageName} must wait until App Lock
+     * authentication completes.
+     */
+    public boolean shouldBlockPermissionDialogStart(String packageName, int userId) {
+        if (TextUtils.isEmpty(packageName) || mController == null || !mController.isEnabled()) {
+            return false;
+        }
+        if (PROTECTED_PACKAGES.contains(packageName) || !mController.isAppLocked(packageName)) {
+            return false;
+        }
+        try {
+            int uid = mContext.getPackageManager().getPackageUidAsUser(packageName, 0, userId);
+            return isAppLocked(packageName, uid, null);
+        } catch (PackageManager.NameNotFoundException e) {
+            return false;
+        }
+    }
+
+    private String getPermissionDialogTargetPackage(ActivityRecord r) {
+        if (r.intent == null) {
+            return r.packageName;
+        }
+        if (ACTION_REQUEST_PERMISSIONS_FOR_OTHER.equals(r.intent.getAction())) {
+            String pkg = r.intent.getStringExtra(Intent.EXTRA_PACKAGE_NAME);
+            if (!TextUtils.isEmpty(pkg)) {
+                return pkg;
+            }
+        }
+        if (!TextUtils.isEmpty(r.launchedFromPackage)) {
+            return r.launchedFromPackage;
+        }
+        return r.packageName;
+    }
+
+    private void deferPermissionDialogUntilUnlocked(ActivityRecord r) {
+        if (isAuthActivity(r.mActivityComponent) || r.intent == null || mAtms == null) {
+            return;
+        }
+        PermissionPolicyInternal policy = mAtms.getPermissionPolicyInternal();
+        if (policy == null || !policy.isIntentToPermissionDialog(r.intent)) {
+            return;
+        }
+        String targetPkg = getPermissionDialogTargetPackage(r);
+        if (shouldBlockPermissionDialogStart(targetPkg, r.mUserId) && !r.finishing) {
+            r.finishIfPossible("applock-defer-permission", false);
+        }
+    }
+
+    private void finishPermissionDialogsInTask(Task task) {
+        if (task == null || mAtms == null) {
+            return;
+        }
+        PermissionPolicyInternal policy = mAtms.getPermissionPolicyInternal();
+        if (policy == null) {
+            return;
+        }
+        task.forAllActivities(r -> {
+            if (!r.finishing && r.intent != null
+                    && policy.isIntentToPermissionDialog(r.intent)
+                    && shouldBlockPermissionDialogStart(
+                            getPermissionDialogTargetPackage(r), r.mUserId)) {
+                r.finishIfPossible("applock-pending-auth", false);
+            }
+        });
     }
 
     /**
