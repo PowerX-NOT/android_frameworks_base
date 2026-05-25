@@ -658,6 +658,9 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                     + " " + sessionSnapshot(packageName, userId));
             if (resultCode == Activity.RESULT_OK && packageName != null) {
                 markSessionUnlocked(packageName, userId);
+                if (r.getTask() != null) {
+                    finishAllAuthActivitiesInTask(r.getTask(), r);
+                }
             } else if (r.resultTo != null) {
                 debugSession("checkUnlockApp canceled, finishing resultTo="
                         + r.resultTo.packageName);
@@ -908,17 +911,52 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         return mController != null && mController.isEnabled() && mController.hasLockedPackages();
     }
 
+    /** Returns the topmost (most recently started) auth activity in the task, if any. */
     private ActivityRecord findAuthActivityInTask(Task task) {
         if (task == null) {
             return null;
         }
         final ActivityRecord[] found = new ActivityRecord[1];
         task.forAllActivities(r -> {
-            if (found[0] == null && !r.finishing && isAuthActivity(r.mActivityComponent)) {
+            if (!r.finishing && isAuthActivity(r.mActivityComponent)) {
                 found[0] = r;
             }
         });
         return found[0];
+    }
+
+    private void finishAllAuthActivitiesInTask(Task task, ActivityRecord keep) {
+        if (task == null) {
+            return;
+        }
+        task.forAllActivities(r -> {
+            if (!r.finishing && isAuthActivity(r.mActivityComponent) && r != keep) {
+                r.finishIfPossible("applock-extra-auth", false);
+                debugSession("finishAllAuthActivitiesInTask finishing auth in taskId="
+                        + task.mTaskId);
+            }
+        });
+    }
+
+    private void finishAuthActivitiesForPackage(String packageName, int userId) {
+        if (mAtms == null || packageName == null) {
+            return;
+        }
+        mAtms.mRootWindowContainer.forAllLeafTasks(task -> {
+            task.forAllActivities(r -> {
+                if (r.finishing || !isAuthActivity(r.mActivityComponent)) {
+                    return;
+                }
+                if (r.mUserId != userId || r.intent == null) {
+                    return;
+                }
+                final String lockedPkg = r.intent.getStringExtra(EXTRA_LOCKED_PACKAGE);
+                if (packageName.equals(lockedPkg)) {
+                    r.finishIfPossible("applock-session-locked", false);
+                    debugSession("finishAuthActivitiesForPackage pkg=" + packageName);
+                }
+            });
+        }, true /* traverseTopToBottom */);
     }
 
     private void ensureAuthVisibleInTask(Task task, ActivityRecord lockedTop) {
@@ -981,6 +1019,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         }
 
         if (auth != null) {
+            finishAllAuthActivitiesInTask(task, auth);
             ensureAuthVisibleInTask(task, target);
             final ActivityRecord topAfter = task != null ? task.getTopNonFinishingActivity() : null;
             if (topAfter != null && isAuthActivity(topAfter.mActivityComponent)) {
@@ -1015,6 +1054,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                 + sessionSnapshot(target.packageName, target.mUserId));
 
         finishPermissionDialogsInTask(target.getTask());
+        finishAllAuthActivitiesInTask(target.getTask(), null);
 
         try {
             Intent intent = new Intent(getConfirmIntent());
@@ -1272,6 +1312,14 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         }
         for (String key : keys) {
             relockFromSessionKey(key);
+            int colon = key.indexOf(':');
+            if (colon > 0 && colon < key.length() - 1) {
+                try {
+                    finishAuthActivitiesForPackage(key.substring(colon + 1),
+                            Integer.parseInt(key.substring(0, colon)));
+                } catch (NumberFormatException ignored) {
+                }
+            }
         }
         debugSession("lockTaskSessionsOnRemove reason=" + reason + " keys=" + keys);
     }
@@ -1309,6 +1357,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     private void markSessionLocked(String packageName, int userId) {
         String key = sessionKey(userId, packageName);
         clearCheckLockDedupe();
+        finishAuthActivitiesForPackage(packageName, userId);
         if (mUnlockedApps.remove(key)) {
             mUnlockTimestamps.remove(key);
             cancelTimeoutLock(key);
