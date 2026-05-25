@@ -82,6 +82,9 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     private static final int LOCK_BEHAVIOR_ON_SCREEN_OFF = AppLockManager.LOCK_BEHAVIOR_ON_SCREEN_OFF;
     private static final int LOCK_BEHAVIOR_ON_KILL = AppLockManager.LOCK_BEHAVIOR_ON_KILL;
 
+    /** Collapse duplicate checkLockApp() from resume + setResumedActivity in one pass. */
+    private static final long CHECK_LOCK_DEBOUNCE_MS = 100L;
+
     /** Packages that must never be subject to app lock. */
     private static final Set<String> PROTECTED_PACKAGES = Set.of(
             "android",
@@ -106,6 +109,10 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     private final Set<String> mPendingUnlocks = new HashSet<>();
     private final Map<String, Long> mUnlockTimestamps = new HashMap<>();
     private final Map<String, Runnable> mTimeoutRunnables = new HashMap<>();
+    private final Object mCheckLockDedupeLock = new Object();
+    private String mLastCheckLockToken;
+    private boolean mLastCheckLockBlocked;
+    private long mLastCheckLockUptime;
     private String mLastFocusedAppKey;
     private int mLockBehavior = LOCK_BEHAVIOR_ON_LEAVE;
     private int mLockTimeout = AppLockManager.DEFAULT_LOCK_TIMEOUT;
@@ -225,7 +232,8 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             mConfirmIntent = new Intent(ACTION_AUTH_UNLOCK);
             mConfirmIntent.setClassName(AUTH_PACKAGE, AUTH_ACTIVITY);
             mConfirmIntent.addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
-                    | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                    | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                    | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         }
         return mConfirmIntent;
     }
@@ -528,6 +536,14 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                     + r.packageName + " " + sessionSnapshot(r.packageName, r.mUserId));
             return;
         }
+        final String pendingKey = sessionKey(r);
+        synchronized (mPendingUnlocks) {
+            if (mPendingUnlocks.contains(pendingKey)) {
+                debugSession("lockTopApp skip auth pending reason=" + reason + " pkg="
+                        + r.packageName);
+                return;
+            }
+        }
         startAuthPrompt(r, reason);
     }
 
@@ -566,6 +582,30 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     @Override
     public boolean checkLockApp(ActivityRecord prev, ActivityRecord next) {
         if (next == null) return false;
+        if (isAuthActivity(next.mActivityComponent)) {
+            return false;
+        }
+        final String dedupeToken = Integer.toHexString(System.identityHashCode(next))
+                + "@" + sessionKey(next);
+        final long now = SystemClock.uptimeMillis();
+        synchronized (mCheckLockDedupeLock) {
+            if (dedupeToken.equals(mLastCheckLockToken)
+                    && (now - mLastCheckLockUptime) < CHECK_LOCK_DEBOUNCE_MS) {
+                debugSession("checkLockApp dedupe pkg=" + next.packageName + " blocked="
+                        + mLastCheckLockBlocked);
+                return mLastCheckLockBlocked;
+            }
+            mLastCheckLockToken = dedupeToken;
+            mLastCheckLockUptime = now;
+        }
+        final boolean blocked = checkLockAppInner(prev, next);
+        synchronized (mCheckLockDedupeLock) {
+            mLastCheckLockBlocked = blocked;
+        }
+        return blocked;
+    }
+
+    private boolean checkLockAppInner(ActivityRecord prev, ActivityRecord next) {
         debugSession("checkLockApp enter next=" + next.packageName + " prev="
                 + (prev != null ? prev.packageName : "null")
                 + (prev != null && prev.finishing ? " (finishing)" : "")
@@ -799,13 +839,18 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
 
     @Override
     public void removeTask(Task task, String reason) {
-        if (task == null || mUnlockedApps.isEmpty()) return;
-
-        if (mLockBehavior == LOCK_BEHAVIOR_ON_KILL) {
-            markTaskSessionsLocked(task);
+        if (task == null || !hasLockedPackages()) {
             return;
         }
 
+        if (mLockBehavior == LOCK_BEHAVIOR_ON_KILL) {
+            lockTaskSessionsOnRemove(task, reason);
+            return;
+        }
+
+        if (mUnlockedApps.isEmpty()) {
+            return;
+        }
         if (mLockBehavior != LOCK_BEHAVIOR_ON_LEAVE || !"remove-task".equals(reason)) {
             return;
         }
@@ -813,7 +858,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                 && !WindowConfiguration.isFloating(task.getWindowingMode())) {
             return;
         }
-        markTaskSessionsLocked(task);
+        lockTaskSessionsOnRemove(task, reason);
     }
 
     @Override
@@ -824,8 +869,16 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             }
             return;
         }
+        // ON_KILL relock is handled in removeTask() when the task is cleared; process death is
+        // only a fallback if the session is still marked unlocked.
         if (mLockBehavior == LOCK_BEHAVIOR_ON_KILL) {
-            markSessionLocked(packageName, userId);
+            String key = sessionKey(userId, packageName);
+            if (mUnlockedApps.contains(key)) {
+                synchronized (mPendingUnlocks) {
+                    mPendingUnlocks.remove(key);
+                }
+                markSessionLocked(packageName, userId);
+            }
         }
     }
 
@@ -887,6 +940,61 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         }
     }
 
+    /**
+     * Reserves {@link #mPendingUnlocks} before posting the auth activity so concurrent resume
+     * paths cannot launch duplicate {@code AuthenticateActivity} instances.
+     *
+     * @return {@code true} if this caller should launch or surface auth; {@code false} if another
+     *         path is already handling auth for this session.
+     */
+    private boolean tryReservePendingUnlock(ActivityRecord target, String reason) {
+        final String pendingKey = sessionKey(target);
+        final Task task = target.getTask();
+        final ActivityRecord auth = findAuthActivityInTask(task);
+        final ActivityRecord top = task != null ? task.getTopNonFinishingActivity() : null;
+
+        synchronized (mPendingUnlocks) {
+            if (mPendingUnlocks.contains(pendingKey)) {
+                if (auth != null && top != null && isAuthActivity(top.mActivityComponent)) {
+                    debugSession("startAuthPrompt skip auth on top reason=" + reason + " pkg="
+                            + target.packageName);
+                    return false;
+                }
+                if (auth != null && top != null && isAppLocked(top)) {
+                    ensureAuthVisibleInTask(task, top);
+                    final ActivityRecord topAfter = task.getTopNonFinishingActivity();
+                    if (topAfter != null && isAuthActivity(topAfter.mActivityComponent)) {
+                        debugSession("startAuthPrompt brought auth to front reason=" + reason
+                                + " pkg=" + target.packageName);
+                        return false;
+                    }
+                }
+                debugSession("startAuthPrompt clear stale pending reason=" + reason + " pkg="
+                        + target.packageName + " authInTask=" + (auth != null));
+                mPendingUnlocks.remove(pendingKey);
+            }
+            if (!mPendingUnlocks.add(pendingKey)) {
+                debugSession("startAuthPrompt skip concurrent reserve reason=" + reason + " pkg="
+                        + target.packageName);
+                return false;
+            }
+        }
+
+        if (auth != null) {
+            ensureAuthVisibleInTask(task, target);
+            final ActivityRecord topAfter = task != null ? task.getTopNonFinishingActivity() : null;
+            if (topAfter != null && isAuthActivity(topAfter.mActivityComponent)) {
+                debugSession("startAuthPrompt reuse auth in task reason=" + reason + " pkg="
+                        + target.packageName);
+                return false;
+            }
+            auth.finishIfPossible("applock-replace-auth", false);
+            debugSession("startAuthPrompt finish stale auth reason=" + reason + " pkg="
+                    + target.packageName);
+        }
+        return true;
+    }
+
     private boolean startAuthPrompt(ActivityRecord target, String reason) {
         if (target == null || mAtms == null) return false;
 
@@ -898,30 +1006,8 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             return true;
         }
 
-        synchronized (mPendingUnlocks) {
-            if (mPendingUnlocks.contains(pendingKey)) {
-                final Task task = target.getTask();
-                final ActivityRecord auth = findAuthActivityInTask(task);
-                final ActivityRecord top = task != null ? task.getTopNonFinishingActivity() : null;
-                if (auth != null && top != null && isAuthActivity(top.mActivityComponent)) {
-                    debugSession("startAuthPrompt skip auth on top reason=" + reason + " pkg="
-                            + target.packageName);
-                    return true;
-                }
-                if (auth != null && top != null && isAppLocked(top)) {
-                    ensureAuthVisibleInTask(task, top);
-                    final ActivityRecord topAfter = task.getTopNonFinishingActivity();
-                    if (topAfter != null && isAuthActivity(topAfter.mActivityComponent)) {
-                        debugSession("startAuthPrompt brought auth to front reason=" + reason
-                                + " pkg=" + target.packageName);
-                        return true;
-                    }
-                }
-                debugSession("startAuthPrompt clear stale pending reason=" + reason + " pkg="
-                        + target.packageName + " authInTask=" + (auth != null));
-                mPendingUnlocks.remove(pendingKey);
-            }
-            mPendingUnlocks.add(pendingKey);
+        if (!tryReservePendingUnlock(target, reason)) {
+            return true;
         }
 
         debugSession("startAuthPrompt launching auth reason=" + reason + " pkg="
@@ -1142,17 +1228,52 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         return policy != null && policy.isIntentToPermissionDialog(intent);
     }
 
-    private void markTaskSessionsLocked(Task task) {
-        ActivityRecord r = task.topRunningActivityLocked();
-        if (r != null) {
-            markSessionLocked(r.packageName, r.mUserId);
+    private Set<String> collectLockedSessionKeysFromTask(Task task) {
+        final Set<String> keys = new HashSet<>();
+        if (task == null || mController == null) {
+            return keys;
         }
-        if (task.mLastPausedActivity != null) {
-            markSessionLocked(task.mLastPausedActivity.packageName, task.mLastPausedActivity.mUserId);
+        task.forAllActivities(r -> {
+            if (r.finishing || isAuthActivity(r.mActivityComponent)) {
+                return;
+            }
+            if (mController.isAppLocked(r.packageName)) {
+                keys.add(sessionKey(r.mUserId, r.packageName));
+            }
+        });
+        if (task.mLastPausedActivity != null && !task.mLastPausedActivity.finishing
+                && !isAuthActivity(task.mLastPausedActivity.mActivityComponent)
+                && mController.isAppLocked(task.mLastPausedActivity.packageName)) {
+            keys.add(sessionKey(task.mLastPausedActivity.mUserId,
+                    task.mLastPausedActivity.packageName));
         }
-        if (task.realActivity != null) {
-            markSessionLocked(task.realActivity.getPackageName(), task.mUserId);
+        if (task.realActivity != null
+                && mController.isAppLocked(task.realActivity.getPackageName())) {
+            keys.add(sessionKey(task.mUserId, task.realActivity.getPackageName()));
         }
+        if (task.intent != null && task.intent.getComponent() != null) {
+            final String pkg = task.intent.getComponent().getPackageName();
+            if (mController.isAppLocked(pkg)) {
+                keys.add(sessionKey(task.mUserId, pkg));
+            }
+        }
+        return keys;
+    }
+
+    private void lockTaskSessionsOnRemove(Task task, String reason) {
+        final Set<String> keys = collectLockedSessionKeysFromTask(task);
+        if (keys.isEmpty()) {
+            return;
+        }
+        synchronized (mPendingUnlocks) {
+            for (String key : keys) {
+                mPendingUnlocks.remove(key);
+            }
+        }
+        for (String key : keys) {
+            relockFromSessionKey(key);
+        }
+        debugSession("lockTaskSessionsOnRemove reason=" + reason + " keys=" + keys);
     }
 
     private void relockFromSessionKey(String key) {
@@ -1166,8 +1287,15 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         }
     }
 
+    private void clearCheckLockDedupe() {
+        synchronized (mCheckLockDedupeLock) {
+            mLastCheckLockToken = null;
+        }
+    }
+
     private void markSessionUnlocked(String packageName, int userId) {
         String key = sessionKey(userId, packageName);
+        clearCheckLockDedupe();
         if (mUnlockedApps.add(key)) {
             mUnlockTimestamps.put(key, SystemClock.elapsedRealtime());
             notifyAppUnlocked(packageName, userId);
@@ -1180,6 +1308,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
 
     private void markSessionLocked(String packageName, int userId) {
         String key = sessionKey(userId, packageName);
+        clearCheckLockDedupe();
         if (mUnlockedApps.remove(key)) {
             mUnlockTimestamps.remove(key);
             cancelTimeoutLock(key);

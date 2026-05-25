@@ -1906,6 +1906,7 @@ public class ActivityTaskSupervisor implements RecentTasks.Callbacks {
         }
         task.mInRemoveTask = true;
         try {
+            AppLockService.get().removeTask(task, reason);
             task.removeActivities(reason, false /* excludingTaskOverlay */);
             cleanUpRemovedTask(task, killProcess, removeFromRecents);
             mService.getLockTaskController().clearLockedTask(task);
@@ -1915,7 +1916,6 @@ public class ActivityTaskSupervisor implements RecentTasks.Callbacks {
             }
             mBalController.checkActivityAllowedToClearTask(
                             task, callingUid, callingPid, callerActivityClassName);
-            AppLockService.get().removeTask(task, reason);
         } finally {
             task.mInRemoveTask = false;
             mService.mChainTracker.endPartial();
