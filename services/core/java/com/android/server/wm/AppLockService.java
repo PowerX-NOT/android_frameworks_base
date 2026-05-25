@@ -519,7 +519,9 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             }
         }
         if (!isAppLocked(next)) {
-            clearUnlockedApp(next);
+            if (!shouldIgnoreFocusChangeForRelock(next)) {
+                clearUnlockedApp(next);
+            }
             return false;
         }
         if (!startAuthPrompt(next, "AppLock.checkLockApp")) return false;
@@ -618,7 +620,6 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             return;
         }
         if (newFocus != null && shouldIgnoreFocusChangeForRelock(newFocus)) {
-            lockTopApp(newTask, "AppLock.onAppFocusChanged");
             return;
         }
         String newKey = newFocus != null ? sessionKey(newFocus) : null;
