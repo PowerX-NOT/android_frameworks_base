@@ -39,6 +39,16 @@ public interface IAppLockService {
     default void lockTopApp(Task task, String reason) {
     }
 
+    /**
+     * Ensures auth is shown before resuming a locked task (e.g. from recents).
+     *
+     * @return {@code true} if the task may be moved to the foreground; {@code false} if the
+     *         locked app must stay blocked until authentication completes.
+     */
+    default boolean prepareLockedTaskForResume(Task task, String reason) {
+        return true;
+    }
+
     default boolean isAuthActivity(ComponentName componentName) {
         return false;
     }

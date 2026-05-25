@@ -532,6 +532,38 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     }
 
     @Override
+    public boolean prepareLockedTaskForResume(Task task, String reason) {
+        if (task == null || !hasLockedPackages()) {
+            return true;
+        }
+        ActivityRecord top = task.getTopNonFinishingActivity();
+        if (top == null) {
+            top = task.topRunningActivityLocked();
+        }
+        if (top == null) {
+            return true;
+        }
+        if (isAuthActivity(top.mActivityComponent)) {
+            return true;
+        }
+        if (!isAppLocked(top)) {
+            return true;
+        }
+        startAuthPrompt(top, reason);
+        ensureAuthVisibleInTask(task, top);
+        final ActivityRecord newTop = task.getTopNonFinishingActivity();
+        if (newTop != null && isAuthActivity(newTop.mActivityComponent)) {
+            return true;
+        }
+        if (newTop != null && isAppLocked(newTop)) {
+            debugSession("prepareLockedTaskForResume block reason=" + reason + " pkg="
+                    + newTop.packageName + " " + sessionSnapshot(newTop.packageName, newTop.mUserId));
+            return false;
+        }
+        return true;
+    }
+
+    @Override
     public boolean checkLockApp(ActivityRecord prev, ActivityRecord next) {
         if (next == null) return false;
         debugSession("checkLockApp enter next=" + next.packageName + " prev="
@@ -678,6 +710,14 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                         + " newKey=" + newKey);
                 relockFromSessionKey(mLastFocusedAppKey);
             }
+            if (newFocus != null && newFocus.isActivityTypeHomeOrRecents()) {
+                synchronized (mPendingUnlocks) {
+                    if (mPendingUnlocks.remove(mLastFocusedAppKey)) {
+                        debugSession("onAppFocusChanged clear pending on leave to home key="
+                                + mLastFocusedAppKey);
+                    }
+                }
+            }
         }
         if (newKey != null) {
             cancelTimeoutLock(newKey);
@@ -815,6 +855,38 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         return mController != null && mController.isEnabled() && mController.hasLockedPackages();
     }
 
+    private ActivityRecord findAuthActivityInTask(Task task) {
+        if (task == null) {
+            return null;
+        }
+        final ActivityRecord[] found = new ActivityRecord[1];
+        task.forAllActivities(r -> {
+            if (found[0] == null && !r.finishing && isAuthActivity(r.mActivityComponent)) {
+                found[0] = r;
+            }
+        });
+        return found[0];
+    }
+
+    private void ensureAuthVisibleInTask(Task task, ActivityRecord lockedTop) {
+        if (task == null || lockedTop == null) {
+            return;
+        }
+        final ActivityRecord auth = findAuthActivityInTask(task);
+        if (auth == null) {
+            return;
+        }
+        final ActivityRecord top = task.getTopNonFinishingActivity();
+        if (top != null && isAuthActivity(top.mActivityComponent)) {
+            return;
+        }
+        if (isAppLocked(lockedTop)) {
+            task.moveActivityToFront(auth);
+            auth.mRootWindowContainer.ensureActivitiesVisible();
+            debugSession("ensureAuthVisibleInTask pkg=" + lockedTop.packageName);
+        }
+    }
+
     private boolean startAuthPrompt(ActivityRecord target, String reason) {
         if (target == null || mAtms == null) return false;
 
@@ -827,11 +899,29 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         }
 
         synchronized (mPendingUnlocks) {
-            if (!mPendingUnlocks.add(pendingKey)) {
-                debugSession("startAuthPrompt skip auth already pending reason=" + reason
-                        + " pkg=" + target.packageName);
-                return true;
+            if (mPendingUnlocks.contains(pendingKey)) {
+                final Task task = target.getTask();
+                final ActivityRecord auth = findAuthActivityInTask(task);
+                final ActivityRecord top = task != null ? task.getTopNonFinishingActivity() : null;
+                if (auth != null && top != null && isAuthActivity(top.mActivityComponent)) {
+                    debugSession("startAuthPrompt skip auth on top reason=" + reason + " pkg="
+                            + target.packageName);
+                    return true;
+                }
+                if (auth != null && top != null && isAppLocked(top)) {
+                    ensureAuthVisibleInTask(task, top);
+                    final ActivityRecord topAfter = task.getTopNonFinishingActivity();
+                    if (topAfter != null && isAuthActivity(topAfter.mActivityComponent)) {
+                        debugSession("startAuthPrompt brought auth to front reason=" + reason
+                                + " pkg=" + target.packageName);
+                        return true;
+                    }
+                }
+                debugSession("startAuthPrompt clear stale pending reason=" + reason + " pkg="
+                        + target.packageName + " authInTask=" + (auth != null));
+                mPendingUnlocks.remove(pendingKey);
             }
+            mPendingUnlocks.add(pendingKey);
         }
 
         debugSession("startAuthPrompt launching auth reason=" + reason + " pkg="

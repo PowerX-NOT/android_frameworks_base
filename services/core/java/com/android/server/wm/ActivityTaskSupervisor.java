@@ -3009,7 +3009,11 @@ public class ActivityTaskSupervisor implements RecentTasks.Callbacks {
                 }
 
                 AppLockService.get().clearUnlockedApp();
-                AppLockService.get().lockTopApp(task, "startActivityFromRecents");
+                if (!AppLockService.get().prepareLockedTaskForResume(task,
+                        "startActivityFromRecents")) {
+                    mWindowManager.executeAppTransition();
+                    return ActivityManager.START_TASK_TO_FRONT;
+                }
 
                 if (moveHomeTaskForward) {
                     // We always want to return to the home activity instead of the recents
