@@ -445,6 +445,7 @@ import com.android.internal.util.MemInfoReader;
 import com.android.internal.util.Preconditions;
 import com.android.internal.util.function.pooled.PooledLambda;
 import com.android.server.AlarmManagerInternal;
+import com.android.server.hiddenapps.HiddenAppsManagerService;
 import com.android.server.wm.AppLockService;
 import com.android.server.BootReceiver;
 import com.android.server.DeviceIdleInternal;
@@ -9253,6 +9254,7 @@ public class ActivityManagerService extends IActivityManager.Stub
             t.traceEnd(); // componentAlias
 
             AppLockService.systemReady(mContext, mActivityTaskManager);
+            HiddenAppsManagerService.systemReady(mContext);
 
             t.traceEnd(); // PhaseActivityManagerReady
         }

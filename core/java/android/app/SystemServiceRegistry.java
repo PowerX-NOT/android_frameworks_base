@@ -299,6 +299,7 @@ import com.android.internal.R;
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.app.IAppOpsService;
 import com.android.internal.app.IAppLockManager;
+import com.android.internal.app.IHiddenAppsManager;
 import com.android.internal.app.IBatteryStats;
 import com.android.internal.app.ISoundTriggerService;
 import com.android.internal.appwidget.IAppWidgetService;
@@ -966,6 +967,18 @@ public final class SystemServiceRegistry {
                 }
                 IAppLockManager service = IAppLockManager.Stub.asInterface(b);
                 return new AppLockManager(ctx.getOuterContext(), service);
+            }});
+
+        registerService(Context.HIDDEN_APPS_SERVICE, HiddenAppsManager.class,
+                new CachedServiceFetcher<HiddenAppsManager>() {
+            @Override
+            public HiddenAppsManager createService(ContextImpl ctx) {
+                IBinder b = ServiceManager.getService(Context.HIDDEN_APPS_SERVICE);
+                if (b == null) {
+                    return null;
+                }
+                IHiddenAppsManager service = IHiddenAppsManager.Stub.asInterface(b);
+                return new HiddenAppsManager(ctx.getOuterContext(), service);
             }});
 
         registerService(Context.CAMERA_SERVICE, CameraManager.class,
