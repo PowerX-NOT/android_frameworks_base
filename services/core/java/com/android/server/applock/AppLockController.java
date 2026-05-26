@@ -35,6 +35,8 @@ public class AppLockController {
     private static final String TAG = "AppLockController";
 
     private static final String KEY_LOCKED_PKGS = "locked_pkgs";
+    /** App Lock settings package; locked automatically when feature is on and a password exists. */
+    private static final String SETTINGS_PACKAGE = "com.android.applock";
 
     private final Context mContext;
     private final ContentResolver mContentResolver;
@@ -132,10 +134,19 @@ public class AppLockController {
 
     public boolean isAppLocked(String packageName) {
         if (!mEnabled || TextUtils.isEmpty(packageName)) return false;
+        if (SETTINGS_PACKAGE.equals(packageName)) {
+            return hasPrivacyPassword();
+        }
         if (mBlacklistedPackages.contains(packageName)) return false;
         synchronized (this) {
             return mLockedPackages.contains(packageName);
         }
+    }
+
+    private boolean hasPrivacyPassword() {
+        final String hash = Settings.Secure.getString(mContentResolver,
+                AppLockManager.SETTING_CREDENTIAL_HASH);
+        return !TextUtils.isEmpty(hash);
     }
 
     public boolean hasLockedPackages() {
@@ -183,6 +194,7 @@ public class AppLockController {
 
     public boolean isPackageLockable(String packageName) {
         if (TextUtils.isEmpty(packageName)) return false;
+        if (SETTINGS_PACKAGE.equals(packageName)) return false;
         if (mBlacklistedPackages.contains(packageName)) return false;
         if (mLauncherApps == null) return false;
         try {
@@ -204,6 +216,7 @@ public class AppLockController {
                 Set<String> seen = new HashSet<>();
                 for (LauncherActivityInfo info : activities) {
                     String pkgName = info.getApplicationInfo().packageName;
+                    if (SETTINGS_PACKAGE.equals(pkgName)) continue;
                     if (!mBlacklistedPackages.contains(pkgName) && !seen.contains(pkgName)) {
                         result.add(pkgName);
                         seen.add(pkgName);
@@ -218,6 +231,7 @@ public class AppLockController {
                 PackageManager pm = mContext.getPackageManager();
                 List<ApplicationInfo> apps = pm.getInstalledApplications(0);
                 for (ApplicationInfo appInfo : apps) {
+                    if (SETTINGS_PACKAGE.equals(appInfo.packageName)) continue;
                     if (mBlacklistedPackages.contains(appInfo.packageName)) continue;
                     if (isSystemUid(appInfo.uid)) continue;
                     if (pm.getLaunchIntentForPackage(appInfo.packageName) != null) {

@@ -502,7 +502,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
     @Override
     public boolean isAppLocked(String packageName, int uid, ComponentName component) {
         if (mController == null || !mController.isEnabled()) return false;
-        if (PROTECTED_PACKAGES.contains(packageName)) return false;
+        if (isProtectedFromSystemLock(packageName)) return false;
         if (!mController.isAppLocked(packageName)) return false;
 
         int userId = UserHandle.getUserId(uid);
@@ -914,9 +914,17 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
 
     // --- internals ---
 
+    /** {@link #AUTH_PACKAGE} may be locked when enabled and a privacy password is configured. */
+    private boolean isProtectedFromSystemLock(String packageName) {
+        if (AUTH_PACKAGE.equals(packageName)) {
+            return false;
+        }
+        return PROTECTED_PACKAGES.contains(packageName);
+    }
+
     private AppLockState computeAppLockState(String packageName) {
         if (mController == null || !mController.isEnabled()) return NONE;
-        if (PROTECTED_PACKAGES.contains(packageName) || !mController.isAppLocked(packageName)) {
+        if (isProtectedFromSystemLock(packageName) || !mController.isAppLocked(packageName)) {
             return NONE;
         }
         if (!mKeyguardDone) return LOCKED;
@@ -1234,7 +1242,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         if (mController == null || !mController.isEnabled()) {
             return "applock_disabled";
         }
-        if (PROTECTED_PACKAGES.contains(packageName)) {
+        if (isProtectedFromSystemLock(packageName)) {
             return "protected_package";
         }
         if (!mController.isAppLocked(packageName)) {
@@ -1273,7 +1281,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
         if (TextUtils.isEmpty(packageName) || mController == null || !mController.isEnabled()) {
             return false;
         }
-        if (PROTECTED_PACKAGES.contains(packageName) || !mController.isAppLocked(packageName)) {
+        if (isProtectedFromSystemLock(packageName) || !mController.isAppLocked(packageName)) {
             return false;
         }
         try {
