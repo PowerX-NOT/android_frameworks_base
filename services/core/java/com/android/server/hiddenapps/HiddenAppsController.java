@@ -6,13 +6,11 @@ package com.android.server.hiddenapps;
 import android.app.HiddenAppsManager;
 import android.content.ContentResolver;
 import android.content.Context;
-import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.LauncherActivityInfo;
 import android.content.pm.LauncherApps;
 import android.content.pm.PackageManager;
 import android.database.ContentObserver;
-import android.net.Uri;
 import android.os.Binder;
 import android.os.Handler;
 import android.os.Looper;
@@ -27,6 +25,7 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -103,7 +102,7 @@ public class HiddenAppsController {
                     JSONObject config = new JSONObject(jsonStr);
                     JSONObject pkgs = config.optJSONObject(KEY_PACKAGES);
                     if (pkgs != null) {
-                        var keys = pkgs.keys();
+                        Iterator<String> keys = pkgs.keys();
                         while (keys.hasNext()) {
                             String pkg = keys.next();
                             int mode = pkgs.optInt(pkg, HiddenAppsManager.HIDE_NONE);
@@ -160,22 +159,15 @@ public class HiddenAppsController {
             Slog.w(TAG, "Cannot hide package - not hideable: " + packageName);
             return;
         }
-        int uid = getPackageUid(packageName);
         synchronized (this) {
             if (mode == HiddenAppsManager.HIDE_NONE) {
                 if (mHiddenModes.remove(packageName) != null) {
                     saveConfigToSettings();
-                    if (uid >= 0) {
-                        broadcastPackageChange(packageName, uid);
-                    }
                 }
             } else if (!mHiddenModes.containsKey(packageName)
                     || mHiddenModes.get(packageName) != mode) {
                 mHiddenModes.put(packageName, mode);
                 saveConfigToSettings();
-                if (uid >= 0) {
-                    broadcastPackageChange(packageName, uid);
-                }
             }
         }
     }
@@ -267,28 +259,6 @@ public class HiddenAppsController {
             action.run();
         } finally {
             Binder.restoreCallingIdentity(token);
-        }
-    }
-
-    private void broadcastPackageChange(String packageName, int uid) {
-        try {
-            Intent intent = new Intent(Intent.ACTION_PACKAGE_CHANGED);
-            intent.setData(Uri.fromParts("package", packageName, null));
-            intent.putExtra(Intent.EXTRA_UID, uid);
-            intent.putExtra(Intent.EXTRA_USER_HANDLE, UserHandle.getUserId(uid));
-            intent.putExtra(Intent.EXTRA_CHANGED_COMPONENT_NAME_LIST, new String[]{packageName});
-            intent.putExtra(Intent.EXTRA_DONT_KILL_APP, true);
-            mContext.sendBroadcastAsUser(intent, UserHandle.of(UserHandle.getUserId(uid)));
-        } catch (Exception e) {
-            Slog.w(TAG, "Failed to broadcast package change for " + packageName, e);
-        }
-    }
-
-    private int getPackageUid(String packageName) {
-        try {
-            return mContext.getPackageManager().getApplicationInfo(packageName, 0).uid;
-        } catch (PackageManager.NameNotFoundException e) {
-            return -1;
         }
     }
 

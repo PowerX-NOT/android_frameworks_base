@@ -27,12 +27,9 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
     private static final String TAG = "HiddenAppsManagerService";
 
     private static final String SETTINGS_PACKAGE = "com.android.applock";
-    private static final String LAUNCHER_PACKAGE = "com.android.launcher3";
-
     private static final Set<String> BLACKLISTED_PACKAGES = Set.of(
             "android",
             SETTINGS_PACKAGE,
-            LAUNCHER_PACKAGE,
             "com.android.settings"
     );
 
@@ -185,7 +182,7 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
             return false;
         }
         for (String pkg : packages) {
-            if (SETTINGS_PACKAGE.equals(pkg) || LAUNCHER_PACKAGE.equals(pkg)) {
+            if (SETTINGS_PACKAGE.equals(pkg)) {
                 return true;
             }
         }
