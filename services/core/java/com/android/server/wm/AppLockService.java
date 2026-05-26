@@ -745,22 +745,8 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                         .getDefaultTaskDisplayArea().forAllTasks(this::addVisibleTaskToUnlocked);
             } else {
                 mKeyguardDone = false;
-                if (mLockBehavior == LOCK_BEHAVIOR_TIMEOUT && mLastFocusedAppKey != null) {
-                    scheduleTimeoutLock(mLastFocusedAppKey);
-                }
-                if (mLockBehavior == LOCK_BEHAVIOR_ON_SCREEN_OFF) {
-                    lockAllSessionsAndNotify();
-                } else {
-                    // Always relock App Lock settings on screen off regardless of policy.
-                    if (!mUnlockedApps.isEmpty()) {
-                        String[] keys = mUnlockedApps.toArray(new String[0]);
-                        for (String key : keys) {
-                            if (isSettingsAppKey(key)) {
-                                relockFromSessionKey(key);
-                            }
-                        }
-                    }
-                }
+                // Always relock every unlocked app when the screen turns off.
+                lockAllSessionsAndNotify();
             }
         } catch (Exception e) {
             Slog.w(TAG, "setKeyguardDoneLocked failed", e);
