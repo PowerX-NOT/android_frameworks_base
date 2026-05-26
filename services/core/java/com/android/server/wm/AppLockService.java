@@ -750,6 +750,16 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                 }
                 if (mLockBehavior == LOCK_BEHAVIOR_ON_SCREEN_OFF) {
                     lockAllSessionsAndNotify();
+                } else {
+                    // Always relock App Lock settings on screen off regardless of policy.
+                    if (!mUnlockedApps.isEmpty()) {
+                        String[] keys = mUnlockedApps.toArray(new String[0]);
+                        for (String key : keys) {
+                            if (isSettingsAppKey(key)) {
+                                relockFromSessionKey(key);
+                            }
+                        }
+                    }
                 }
             }
         } catch (Exception e) {
@@ -774,10 +784,11 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
                 + " newKey=" + newKey + " lastKey=" + mLastFocusedAppKey);
         if (mLastFocusedAppKey != null && !mLastFocusedAppKey.equals(newKey)) {
             scheduleTimeoutLock(mLastFocusedAppKey);
-            if (mLockBehavior == LOCK_BEHAVIOR_ON_LEAVE
-                    && mUnlockedApps.contains(mLastFocusedAppKey)) {
+            boolean wasUnlocked = mUnlockedApps.contains(mLastFocusedAppKey);
+            boolean isSettings = isSettingsAppKey(mLastFocusedAppKey);
+            if (wasUnlocked && (mLockBehavior == LOCK_BEHAVIOR_ON_LEAVE || isSettings)) {
                 debugSession("onAppFocusChanged relock on leave lastKey=" + mLastFocusedAppKey
-                        + " newKey=" + newKey);
+                        + " newKey=" + newKey + " settings=" + isSettings);
                 relockFromSessionKey(mLastFocusedAppKey);
             }
             if (newFocus != null && newFocus.isActivityTypeHomeOrRecents()) {
@@ -1271,6 +1282,14 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             }
         }
         return "should_be_locked";
+    }
+
+    private boolean isSettingsAppKey(String key) {
+        if (key == null) return false;
+        int colon = key.indexOf(':');
+        if (colon <= 0 || colon >= key.length() - 1) return false;
+        String pkg = key.substring(colon + 1);
+        return AUTH_PACKAGE.equals(pkg);
     }
 
     /**
