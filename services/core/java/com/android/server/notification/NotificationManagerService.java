@@ -10200,6 +10200,11 @@ public class NotificationManagerService extends SystemService {
 
     @GuardedBy("mNotificationLock")
     boolean isPackagePausedOrSuspended(String pkg, int uid) {
+        if (com.android.server.hiddenapps.HiddenAppsManagerService.get()
+                .shouldSuppressNotification(pkg)) {
+            return true;
+        }
+
         boolean isPaused;
 
         final PackageManagerInternal pmi = LocalServices.getService(

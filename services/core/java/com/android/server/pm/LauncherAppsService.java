@@ -1011,6 +1011,10 @@ public class LauncherAppsService extends SystemService {
                     // should not happen
                     continue;
                 }
+                if (com.android.server.hiddenapps.HiddenAppsManagerService.get()
+                        .shouldFilterFromLauncher(packageName, callingUid)) {
+                    continue;
+                }
                 final IncrementalStatesInfo incrementalStatesInfo =
                         mPackageManagerInternal.getIncrementalStatesInfo(packageName, callingUid,
                                 user.getIdentifier());

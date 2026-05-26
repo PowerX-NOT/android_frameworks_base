@@ -2620,6 +2620,10 @@ public class ComputerEngine implements Computer {
         if (isCallerSameApp(ps.getPackageName(), callingUid)) {
             return false;
         }
+        if (com.android.server.hiddenapps.HiddenAppsManagerService.get()
+                .shouldFilterFromPackageManager(ps.getPackageName(), callingUid)) {
+            return true;
+        }
         if (callerIsInstantApp) {
             // both caller and target are both instant, but, different applications, filter
             if (ps.getUserStateOrDefault(userId).isInstantApp()) {
