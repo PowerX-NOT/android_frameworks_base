@@ -1274,8 +1274,7 @@ public class ComputerEngine implements Computer {
                 PackageStateInternal resolvedSetting =
                         getPackageStateInternal(info.activityInfo.packageName, 0);
                 if (resolveForStart
-                        || !mAppsFilter.shouldFilterApplication(this,
-                        filterCallingUid, callingSetting, resolvedSetting, userId)) {
+                        || !shouldFilterApplication(resolvedSetting, filterCallingUid, userId)) {
                     continue;
                 }
             } else if (ephemeralPkgName.equals(info.activityInfo.packageName)) {
@@ -1308,8 +1307,7 @@ public class ComputerEngine implements Computer {
                         mSettings.getSettingBase(UserHandle.getAppId(filterCallingUid));
                 PackageStateInternal resolvedSetting =
                         getPackageStateInternal(info.serviceInfo.packageName, 0);
-                if (!mAppsFilter.shouldFilterApplication(this,
-                        filterCallingUid, callingSetting, resolvedSetting, userId)) {
+                if (!shouldFilterApplication(resolvedSetting, filterCallingUid, userId)) {
                     continue;
                 }
             }

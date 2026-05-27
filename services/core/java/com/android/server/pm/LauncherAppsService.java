@@ -127,6 +127,7 @@ import com.android.internal.util.Preconditions;
 import com.android.internal.util.SizedInputStream;
 import com.android.server.LocalServices;
 import com.android.server.SystemService;
+import com.android.server.hiddenapps.HiddenAppsManagerService;
 import com.android.server.pm.pkg.AndroidPackage;
 import com.android.server.pm.pkg.ArchiveState;
 import com.android.server.pm.pkg.PackageStateInternal;
@@ -1011,7 +1012,7 @@ public class LauncherAppsService extends SystemService {
                     // should not happen
                     continue;
                 }
-                if (com.android.server.hiddenapps.HiddenAppsManagerService.get()
+                if (HiddenAppsManagerService.get()
                         .shouldFilterFromLauncher(packageName, callingUid)) {
                     continue;
                 }

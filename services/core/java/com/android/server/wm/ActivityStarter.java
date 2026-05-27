@@ -98,6 +98,7 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.app.ActivityManager;
 import android.app.ActivityOptions;
+import android.app.HiddenAppsManager;
 import android.app.IApplicationThread;
 import android.app.PendingIntent;
 import android.app.ProfilerInfo;
@@ -142,6 +143,7 @@ import com.android.internal.util.FrameworkStatsLog;
 import com.android.server.UiThread;
 import com.android.server.am.ActivityManagerService.IntentCreatorToken;
 import com.android.server.am.PendingIntentRecord;
+import com.android.server.hiddenapps.HiddenAppsManagerService;
 import com.android.server.pm.InstantAppResolver;
 import com.android.server.pm.PackageArchiver;
 import com.android.server.power.ShutdownCheckPoints;
@@ -1252,6 +1254,19 @@ class ActivityStarter {
                 }
             }
             throw e;
+        }
+        if (aInfo != null && aInfo.applicationInfo != null
+                && !intent.getBooleanExtra(HiddenAppsManager.EXTRA_ALLOW_HIDDEN_LAUNCH, false)
+                && HiddenAppsManagerService.get().shouldFilterFromPackageManager(
+                        aInfo.packageName, callingUid)) {
+            Slog.i(TAG, "Aborting start of completely hidden package " + aInfo.packageName
+                    + " uid=" + callingUid);
+            if (resultRecord != null) {
+                resultRecord.sendResult(INVALID_UID, resultWho, requestCode, RESULT_CANCELED,
+                        null /* data */, null /* callerToken */, null /* dataGrants */);
+            }
+            SafeActivityOptions.abort(options);
+            return START_CLASS_NOT_FOUND;
         }
         abort |= !mService.mIntentFirewall.checkStartActivity(intent, callingUid,
                 callingPid, resolvedType, aInfo.applicationInfo);

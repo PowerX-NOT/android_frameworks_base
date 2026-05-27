@@ -12,6 +12,7 @@ import android.os.RemoteCallbackList;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.UserHandle;
+import android.text.TextUtils;
 import android.util.Slog;
 
 import com.android.internal.app.IHiddenAppsManager;
@@ -25,6 +26,7 @@ import java.util.Set;
  */
 public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
     private static final String TAG = "HiddenAppsManagerService";
+    private static final boolean DEBUG = true;
 
     private static final String SETTINGS_PACKAGE = "com.android.applock";
     private static final Set<String> BLACKLISTED_PACKAGES = Set.of(
@@ -73,22 +75,26 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
 
     @Override
     public boolean isAppHidden(String packageName) {
-        return mController.isAppHidden(packageName);
+        return mController != null && mController.isAppHidden(packageName);
     }
 
     @Override
     public boolean isAppCompletelyHidden(String packageName) {
-        return mController.isAppCompletelyHidden(packageName);
+        return mController != null && mController.isAppCompletelyHidden(packageName);
     }
 
     @Override
     public boolean shouldHideFromLauncher(String packageName) {
-        return mController.shouldHideFromLauncher(packageName);
+        return mController != null && mController.shouldHideFromLauncher(packageName);
     }
 
     @Override
     public void setHiddenMode(String packageName, int mode) {
         enforceManageHiddenApps();
+        if (DEBUG) {
+            Slog.i(TAG, "setHiddenMode pkg=" + packageName + " mode=" + modeName(mode)
+                    + " caller=" + callerLabel(Binder.getCallingUid()));
+        }
         mController.setHiddenMode(packageName, mode);
         notifyHiddenAppsChanged();
     }
@@ -96,23 +102,27 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
     @Override
     public void setAllowNotificationsFromHiddenApps(boolean allow) {
         enforceManageHiddenApps();
+        if (DEBUG) {
+            Slog.i(TAG, "setAllowNotificationsFromHiddenApps allow=" + allow
+                    + " caller=" + callerLabel(Binder.getCallingUid()));
+        }
         mController.setAllowNotificationsFromHiddenApps(allow);
         notifyHiddenAppsChanged();
     }
 
     @Override
     public boolean isAllowNotificationsFromHiddenApps() {
-        return mController.isAllowNotificationsFromHiddenApps();
+        return mController != null && mController.isAllowNotificationsFromHiddenApps();
     }
 
     @Override
     public List<String> getHideablePackages() {
-        return mController.getHideablePackages();
+        return mController != null ? mController.getHideablePackages() : List.of();
     }
 
     @Override
     public List<String> getHiddenPackages() {
-        return mController.getHiddenPackages();
+        return mController != null ? mController.getHiddenPackages() : List.of();
     }
 
     @Override
@@ -136,11 +146,18 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
      * {@code callingUid}.
      */
     public boolean shouldFilterFromLauncher(String targetPackage, int callingUid) {
-        if (mController == null) return false;
+        if (mController == null || TextUtils.isEmpty(targetPackage)) return false;
         if (!mController.shouldHideFromLauncher(targetPackage)) {
             return false;
         }
-        return !canBypassHiddenFilter(callingUid);
+        final boolean bypass = canBypassHiddenFilter(callingUid);
+        final boolean filter = !bypass;
+        if (DEBUG && filter) {
+            Slog.i(TAG, "filter launcher pkg=" + targetPackage + " mode="
+                    + modeName(mController.getHiddenMode(targetPackage))
+                    + " caller=" + callerLabel(callingUid));
+        }
+        return filter;
     }
 
     /**
@@ -148,22 +165,31 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
      * from {@code callingUid}.
      */
     public boolean shouldFilterFromPackageManager(String targetPackage, int callingUid) {
-        if (mController == null) return false;
+        if (mController == null || TextUtils.isEmpty(targetPackage)) return false;
         if (!mController.isAppCompletelyHidden(targetPackage)) {
             return false;
         }
-        return !canBypassHiddenFilter(callingUid);
+        final boolean bypass = canBypassHiddenFilter(callingUid);
+        final boolean filter = !bypass;
+        if (DEBUG && filter) {
+            Slog.i(TAG, "filter pm pkg=" + targetPackage + " mode=complete caller="
+                    + callerLabel(callingUid));
+        }
+        return filter;
     }
 
     /**
      * Whether notifications from {@code packageName} should be suppressed.
      */
     public boolean shouldSuppressNotification(String packageName) {
-        if (mController == null) return false;
-        if (!mController.isAppCompletelyHidden(packageName)) {
+        if (mController == null || !mController.isAppCompletelyHidden(packageName)) {
             return false;
         }
-        return !mController.isAllowNotificationsFromHiddenApps();
+        final boolean suppress = !mController.isAllowNotificationsFromHiddenApps();
+        if (DEBUG && suppress) {
+            Slog.i(TAG, "suppress notification pkg=" + packageName);
+        }
+        return suppress;
     }
 
     public void onPackageRemoved(String packageName) {
@@ -175,6 +201,9 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
     private boolean canBypassHiddenFilter(int callingUid) {
         final int appId = UserHandle.getAppId(callingUid);
         if (appId < Process.FIRST_APPLICATION_UID) {
+            if (DEBUG) {
+                Slog.d(TAG, "bypass uid=" + callingUid + " reason=system");
+            }
             return true;
         }
         final String[] packages = mContext.getPackageManager().getPackagesForUid(callingUid);
@@ -183,6 +212,9 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
         }
         for (String pkg : packages) {
             if (SETTINGS_PACKAGE.equals(pkg)) {
+                if (DEBUG) {
+                    Slog.d(TAG, "bypass uid=" + callingUid + " pkg=" + pkg + " reason=settings");
+                }
                 return true;
             }
         }
@@ -218,5 +250,24 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
         } finally {
             mListeners.finishBroadcast();
         }
+    }
+
+    private String callerLabel(int uid) {
+        if (mContext == null) {
+            return Integer.toString(uid);
+        }
+        final String[] pkgs = mContext.getPackageManager().getPackagesForUid(uid);
+        if (pkgs == null || pkgs.length == 0) {
+            return "uid:" + uid;
+        }
+        return pkgs[0] + "(" + uid + ")";
+    }
+
+    private static String modeName(int mode) {
+        return switch (mode) {
+            case HiddenAppsManager.HIDE_COMPLETE -> "complete";
+            case HiddenAppsManager.HIDE_LAUNCHER -> "launcher";
+            default -> "none";
+        };
     }
 }
