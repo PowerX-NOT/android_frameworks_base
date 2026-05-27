@@ -5,7 +5,6 @@ package com.android.server.hiddenapps;
 
 import android.app.HiddenAppsManager;
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.os.Binder;
 import android.os.Process;
 import android.os.RemoteCallbackList;
@@ -199,10 +198,13 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
     }
 
     private boolean canBypassHiddenFilter(int callingUid) {
-        final int appId = UserHandle.getAppId(callingUid);
-        if (appId < Process.FIRST_APPLICATION_UID) {
+        // Only allow bypass for calls that originate from within system_server itself.
+        // Do not grant blanket bypass to all callers with system/shared UIDs (e.g. Settings app).
+        final int callingPid = Binder.getCallingPid();
+        if (callingPid == Process.myPid()) {
             if (DEBUG) {
-                Slog.d(TAG, "bypass uid=" + callingUid + " reason=system");
+                Slog.d(TAG, "bypass uid=" + callingUid + " pid=" + callingPid
+                        + " reason=system_server_internal");
             }
             return true;
         }
