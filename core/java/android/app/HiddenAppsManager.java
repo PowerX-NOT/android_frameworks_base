@@ -146,6 +146,22 @@ public class HiddenAppsManager {
         }
     }
 
+    /**
+     * Returns hidden apps with labels and launch components for the authenticated drawer.
+     *
+     * @hide
+     */
+    @NonNull
+    public List<HiddenAppInfo> getHiddenAppsForDrawer() {
+        try {
+            List<HiddenAppInfo> list = mService.getHiddenAppsForDrawer(
+                    mContext.getPackageName());
+            return list != null ? list : Collections.emptyList();
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
     /** @hide */
     public void registerHiddenAppsStateListener(@NonNull IHiddenAppsStateListener listener) {
         try {

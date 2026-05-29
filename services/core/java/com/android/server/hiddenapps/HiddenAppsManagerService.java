@@ -4,7 +4,17 @@
 package com.android.server.hiddenapps;
 
 import android.app.HiddenAppsManager;
+import android.app.HiddenAppInfo;
+import android.annotation.Nullable;
+import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 import android.os.Binder;
 import android.os.Process;
 import android.os.RemoteCallbackList;
@@ -17,6 +27,7 @@ import android.util.Slog;
 import com.android.internal.app.IHiddenAppsManager;
 import com.android.internal.app.IHiddenAppsStateListener;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -25,9 +36,10 @@ import java.util.Set;
  */
 public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
     private static final String TAG = "HiddenAppsManagerService";
-    private static final boolean DEBUG = true;
+    private static final boolean DEBUG = false;
 
     private static final String SETTINGS_PACKAGE = "com.android.applock";
+    private static final String LAUNCHER_PACKAGE = "com.android.launcher3";
     private static final Set<String> BLACKLISTED_PACKAGES = Set.of(
             "android",
             SETTINGS_PACKAGE,
@@ -122,6 +134,50 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
     @Override
     public List<String> getHiddenPackages() {
         return mController != null ? mController.getHiddenPackages() : List.of();
+    }
+
+    @Override
+    public List<HiddenAppInfo> getHiddenAppsForDrawer(String callingPackage) {
+        enforceDrawerCaller(callingPackage);
+        if (mController == null) {
+            return List.of();
+        }
+        final List<HiddenAppInfo> entries = new ArrayList<>();
+        final PackageManager pm = mContext.getPackageManager();
+        final long token = Binder.clearCallingIdentity();
+        try {
+            for (String pkg : mController.getHiddenPackages()) {
+                if (TextUtils.isEmpty(pkg) || !mController.isAppHidden(pkg)) {
+                    continue;
+                }
+                String label = pkg;
+                ComponentName launchComponent = null;
+                Bitmap icon = null;
+                try {
+                    ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
+                    label = info.loadLabel(pm).toString();
+                    icon = drawableToBitmap(info.loadIcon(pm));
+                    Intent launch = pm.getLaunchIntentForPackage(pkg);
+                    if (launch != null) {
+                        launchComponent = launch.getComponent();
+                    }
+                } catch (PackageManager.NameNotFoundException e) {
+                    Slog.w(TAG, "hidden drawer pkg not found: " + pkg);
+                }
+                entries.add(new HiddenAppInfo(pkg, label, launchComponent, icon));
+                if (DEBUG) {
+                    Slog.i(TAG, "drawer entry pkg=" + pkg + " label=" + label
+                            + " launch=" + launchComponent);
+                }
+            }
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+        if (DEBUG) {
+            Slog.i(TAG, "getHiddenAppsForDrawer caller=" + callingPackage
+                    + " count=" + entries.size());
+        }
+        return entries;
     }
 
     @Override
@@ -239,6 +295,28 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
         throw new SecurityException("Only " + SETTINGS_PACKAGE + " may manage hidden apps");
     }
 
+    private void enforceDrawerCaller(String callingPackage) {
+        final int uid = Binder.getCallingUid();
+        if (UserHandle.getAppId(uid) < Process.FIRST_APPLICATION_UID) {
+            return;
+        }
+        final String[] packages = mContext.getPackageManager().getPackagesForUid(uid);
+        if (packages != null) {
+            for (String pkg : packages) {
+                if (LAUNCHER_PACKAGE.equals(pkg)) {
+                    if (DEBUG && !LAUNCHER_PACKAGE.equals(callingPackage)) {
+                        Slog.w(TAG, "drawer caller package mismatch reported="
+                                + callingPackage + " actual=" + pkg);
+                    }
+                    return;
+                }
+            }
+        }
+        Slog.e(TAG, "drawer caller DENIED uid=" + uid + " reportedPkg=" + callingPackage
+                + " uidPkgs=" + (packages != null ? String.join(",", packages) : "null"));
+        throw new SecurityException("Only " + LAUNCHER_PACKAGE + " may query hidden apps for drawer");
+    }
+
     private void notifyHiddenAppsChanged() {
         final int n = mListeners.beginBroadcast();
         try {
@@ -271,5 +349,25 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
             case HiddenAppsManager.HIDE_LAUNCHER -> "launcher";
             default -> "none";
         };
+    }
+
+    @Nullable
+    private static Bitmap drawableToBitmap(@Nullable Drawable drawable) {
+        if (drawable == null) {
+            return null;
+        }
+        if (drawable instanceof BitmapDrawable bitmapDrawable) {
+            Bitmap bitmap = bitmapDrawable.getBitmap();
+            if (bitmap != null) {
+                return bitmap;
+            }
+        }
+        final int width = Math.max(1, drawable.getIntrinsicWidth());
+        final int height = Math.max(1, drawable.getIntrinsicHeight());
+        final Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        final Canvas canvas = new Canvas(bitmap);
+        drawable.setBounds(0, 0, width, height);
+        drawable.draw(canvas);
+        return bitmap;
     }
 }

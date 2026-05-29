@@ -1,5 +1,6 @@
 package com.android.internal.app;
 
+import android.app.HiddenAppInfo;
 import com.android.internal.app.IHiddenAppsStateListener;
 
 /**
@@ -18,6 +19,9 @@ interface IHiddenAppsManager {
 
     List<String> getHideablePackages();
     List<String> getHiddenPackages();
+
+    /** Returns hidden apps with labels for the authenticated launcher drawer. */
+    List<HiddenAppInfo> getHiddenAppsForDrawer(String callingPackage);
 
     void registerHiddenAppsStateListener(IHiddenAppsStateListener listener);
     void unregisterHiddenAppsStateListener(IHiddenAppsStateListener listener);
