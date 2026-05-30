@@ -540,7 +540,7 @@ public class ComputerEngine implements Computer {
         List<ResolveInfo> list = Collections.emptyList();
         boolean skipPostResolution = false;
         if (comp != null) {
-            final ActivityInfo ai = getActivityInfo(comp, flags, userId);
+            final ActivityInfo ai = getActivityInfoInternal(comp, flags, filterCallingUid, userId);
             if (ai != null) {
                 // When specifying an explicit component, we prevent the activity from being
                 // used when either 1) the calling package is normal and the activity is within
@@ -577,8 +577,12 @@ public class ComputerEngine implements Computer {
                 final boolean resolveForStartNonExported = resolveForStart
                                 && !ai.exported
                                 && !isCallerSameApp(pkgName, filterCallingUid);
+                final boolean allowHiddenDrawerLaunch =
+                        com.android.server.hiddenapps.HiddenAppsManagerService.get()
+                                .isHiddenDrawerLaunchAllowed(intent, filterCallingUid);
                 final boolean blockNormalResolution =
-                        (!resolveForStart || resolveForStartNonExported)
+                        !allowHiddenDrawerLaunch
+                                && (!resolveForStart || resolveForStartNonExported)
                                 && !isTargetInstantApp
                                 && !isCallerInstantApp
                                 && shouldFilterApplication(

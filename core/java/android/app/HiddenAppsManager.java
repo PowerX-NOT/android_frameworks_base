@@ -162,6 +162,20 @@ public class HiddenAppsManager {
         }
     }
 
+    /**
+     * Tells the system the authenticated hidden-apps drawer is showing in Launcher3.
+     * While active, Launcher3 may resolve and launch {@link #HIDE_COMPLETE} packages.
+     *
+     * @hide
+     */
+    public void setAuthenticatedHiddenDrawerActive(boolean active) {
+        try {
+            mService.setAuthenticatedHiddenDrawerActive(active);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
     /** @hide */
     public void registerHiddenAppsStateListener(@NonNull IHiddenAppsStateListener listener) {
         try {

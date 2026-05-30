@@ -167,6 +167,7 @@ import com.android.server.am.ActivityManagerService;
 import com.android.server.am.HostingRecord;
 import com.android.server.am.UserState;
 import com.android.server.companion.virtual.VirtualDeviceManagerInternal;
+import com.android.server.hiddenapps.HiddenAppsManagerService;
 import com.android.server.pm.SaferIntentUtils;
 import com.android.server.utils.Slogf;
 import com.android.server.wm.ActivityMetricsLogger.LaunchingState;
@@ -802,10 +803,12 @@ public class ActivityTaskSupervisor implements RecentTasks.Callbacks {
             // (e.g. AMS.startActivityAsUser).
             final long token = Binder.clearCallingIdentity();
             try {
+                HiddenAppsManagerService.get().pushHiddenLaunchContext(intent, filterCallingUid);
                 return mService.getPackageManagerInternalLocked().resolveIntent(
                         intent, resolvedType, modifiedFlags, privateResolveFlags, userId, true,
                         filterCallingUid, callingPid);
             } finally {
+                HiddenAppsManagerService.get().popHiddenLaunchContext();
                 Binder.restoreCallingIdentity(token);
             }
         } finally {

@@ -1242,7 +1242,8 @@ class ActivityStarter {
                 final String targetPackageName = originalIntent.getComponent() != null
                         ? originalIntent.getComponent().getPackageName()
                         : originalIntent.getPackage();
-                if (mService.getPackageManagerInternalLocked()
+                if (!HiddenAppsManagerService.get().isHiddenDrawerLaunchAllowed(intent, callingUid)
+                        && mService.getPackageManagerInternalLocked()
                         .filterAppAccess(targetPackageName, callingUid, userId)) {
                     if (resultRecord != null) {
                         resultRecord.sendResult(INVALID_UID, resultWho, requestCode,
@@ -1256,7 +1257,7 @@ class ActivityStarter {
             throw e;
         }
         if (aInfo != null && aInfo.applicationInfo != null
-                && !intent.getBooleanExtra(HiddenAppsManager.EXTRA_ALLOW_HIDDEN_LAUNCH, false)
+                && !HiddenAppsManagerService.get().isHiddenDrawerLaunchAllowed(intent, callingUid)
                 && HiddenAppsManagerService.get().shouldFilterFromPackageManager(
                         aInfo.packageName, callingUid)) {
             Slog.i(TAG, "Aborting start of completely hidden package " + aInfo.packageName
@@ -1268,6 +1269,11 @@ class ActivityStarter {
             SafeActivityOptions.abort(options);
             return START_CLASS_NOT_FOUND;
         }
+        if (aInfo != null && aInfo.applicationInfo != null
+                && HiddenAppsManagerService.get().isHiddenDrawerLaunchAllowed(intent, callingUid)) {
+            HiddenAppsManagerService.get().onHiddenDrawerAppLaunched(aInfo.packageName);
+        }
+        intent.removeExtra(HiddenAppsManager.EXTRA_ALLOW_HIDDEN_LAUNCH);
         abort |= !mService.mIntentFirewall.checkStartActivity(intent, callingUid,
                 callingPid, resolvedType, aInfo.applicationInfo);
         abort |= !mService.getPermissionPolicyInternal().checkStartActivity(intent, callingUid,
