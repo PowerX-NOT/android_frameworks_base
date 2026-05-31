@@ -98,7 +98,6 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.app.ActivityManager;
 import android.app.ActivityOptions;
-import android.app.HiddenAppsManager;
 import android.app.IApplicationThread;
 import android.app.PendingIntent;
 import android.app.ProfilerInfo;
@@ -1242,7 +1241,7 @@ class ActivityStarter {
                 final String targetPackageName = originalIntent.getComponent() != null
                         ? originalIntent.getComponent().getPackageName()
                         : originalIntent.getPackage();
-                if (!HiddenAppsManagerService.get().isHiddenDrawerLaunchAllowed(intent, callingUid)
+                if (!HiddenAppsManagerService.get().isHiddenDrawerLaunchAllowed(callingUid)
                         && mService.getPackageManagerInternalLocked()
                         .filterAppAccess(targetPackageName, callingUid, userId)) {
                     if (resultRecord != null) {
@@ -1257,7 +1256,7 @@ class ActivityStarter {
             throw e;
         }
         if (aInfo != null && aInfo.applicationInfo != null
-                && !HiddenAppsManagerService.get().isHiddenDrawerLaunchAllowed(intent, callingUid)
+                && !HiddenAppsManagerService.get().isHiddenDrawerLaunchAllowed(callingUid)
                 && HiddenAppsManagerService.get().shouldFilterFromPackageManager(
                         aInfo.packageName, callingUid)) {
             Slog.i(TAG, "Aborting start of completely hidden package " + aInfo.packageName
@@ -1270,10 +1269,9 @@ class ActivityStarter {
             return START_CLASS_NOT_FOUND;
         }
         if (aInfo != null && aInfo.applicationInfo != null
-                && HiddenAppsManagerService.get().isHiddenDrawerLaunchAllowed(intent, callingUid)) {
+                && HiddenAppsManagerService.get().isHiddenDrawerLaunchAllowed(callingUid)) {
             HiddenAppsManagerService.get().onHiddenDrawerAppLaunched(aInfo.packageName);
         }
-        intent.removeExtra(HiddenAppsManager.EXTRA_ALLOW_HIDDEN_LAUNCH);
         abort |= !mService.mIntentFirewall.checkStartActivity(intent, callingUid,
                 callingPid, resolvedType, aInfo.applicationInfo);
         abort |= !mService.getPermissionPolicyInternal().checkStartActivity(intent, callingUid,

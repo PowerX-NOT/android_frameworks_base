@@ -10,7 +10,6 @@ import android.content.Context;
 import android.os.RemoteException;
 
 import com.android.internal.app.IHiddenAppsManager;
-import com.android.internal.app.IHiddenAppsStateListener;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -42,21 +41,10 @@ public class HiddenAppsManager {
     /** @hide */
     public static final String SETTING_ALLOW_NOTIFICATIONS = "hiddenapps_allow_notifications";
 
-    /**
-     * When set on an activity start {@link android.content.Intent}, allows launching a package
-     * that is in {@link #HIDE_COMPLETE} mode (e.g. from the authenticated hidden-apps drawer).
-     *
-     * @hide
-     */
-    public static final String EXTRA_ALLOW_HIDDEN_LAUNCH =
-            "android.app.extra.ALLOW_HIDDEN_LAUNCH";
-
-    private final Context mContext;
     private final IHiddenAppsManager mService;
 
     /** @hide */
     public HiddenAppsManager(@NonNull Context context, @NonNull IHiddenAppsManager service) {
-        mContext = context;
         mService = service;
     }
 
@@ -65,24 +53,6 @@ public class HiddenAppsManager {
     public int getHiddenMode(@NonNull String packageName) {
         try {
             return mService.getHiddenMode(packageName);
-        } catch (RemoteException e) {
-            throw e.rethrowFromSystemServer();
-        }
-    }
-
-    /** @hide */
-    public boolean isAppHidden(@NonNull String packageName) {
-        try {
-            return mService.isAppHidden(packageName);
-        } catch (RemoteException e) {
-            throw e.rethrowFromSystemServer();
-        }
-    }
-
-    /** @hide */
-    public boolean isAppCompletelyHidden(@NonNull String packageName) {
-        try {
-            return mService.isAppCompletelyHidden(packageName);
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
@@ -154,8 +124,7 @@ public class HiddenAppsManager {
     @NonNull
     public List<HiddenAppInfo> getHiddenAppsForDrawer() {
         try {
-            List<HiddenAppInfo> list = mService.getHiddenAppsForDrawer(
-                    mContext.getPackageName());
+            List<HiddenAppInfo> list = mService.getHiddenAppsForDrawer();
             return list != null ? list : Collections.emptyList();
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
@@ -171,24 +140,6 @@ public class HiddenAppsManager {
     public void setAuthenticatedHiddenDrawerActive(boolean active) {
         try {
             mService.setAuthenticatedHiddenDrawerActive(active);
-        } catch (RemoteException e) {
-            throw e.rethrowFromSystemServer();
-        }
-    }
-
-    /** @hide */
-    public void registerHiddenAppsStateListener(@NonNull IHiddenAppsStateListener listener) {
-        try {
-            mService.registerHiddenAppsStateListener(listener);
-        } catch (RemoteException e) {
-            throw e.rethrowFromSystemServer();
-        }
-    }
-
-    /** @hide */
-    public void unregisterHiddenAppsStateListener(@NonNull IHiddenAppsStateListener listener) {
-        try {
-            mService.unregisterHiddenAppsStateListener(listener);
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }

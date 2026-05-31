@@ -5,7 +5,6 @@ package com.android.server.hiddenapps;
 
 import android.app.HiddenAppsManager;
 import android.app.HiddenAppInfo;
-import android.annotation.Nullable;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -17,15 +16,12 @@ import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Binder;
 import android.os.Process;
-import android.os.RemoteCallbackList;
-import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.UserHandle;
 import android.text.TextUtils;
 import android.util.Slog;
 
 import com.android.internal.app.IHiddenAppsManager;
-import com.android.internal.app.IHiddenAppsStateListener;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -37,7 +33,6 @@ import java.util.Set;
  */
 public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
     private static final String TAG = "HiddenAppsManagerService";
-    private static final boolean DEBUG = false;
 
     private static final String SETTINGS_PACKAGE = "com.android.applock";
     private static final String LAUNCHER_PACKAGE = "com.android.launcher3";
@@ -54,26 +49,9 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
     private volatile boolean mAuthenticatedHiddenDrawerActive;
 
     /**
-     * Complete-hide packages that may be resolved while {@link #mAuthenticatedHiddenDrawerActive}
-     * is true (launcher launch + permission grant UI for those apps).
+     * Complete-hide packages accessible while {@link #mAuthenticatedHiddenDrawerActive} is true.
      */
     private final Set<String> mAuthenticatedDrawerCompleteHidePackages = new HashSet<>();
-
-    private final RemoteCallbackList<IHiddenAppsStateListener> mListeners =
-            new RemoteCallbackList<>();
-
-    /** Intent being resolved for an activity start; scoped to the calling thread. */
-    private final ThreadLocal<HiddenLaunchContext> mHiddenLaunchContext = new ThreadLocal<>();
-
-    private static final class HiddenLaunchContext {
-        final Intent intent;
-        final int filterCallingUid;
-
-        HiddenLaunchContext(Intent intent, int filterCallingUid) {
-            this.intent = intent;
-            this.filterCallingUid = filterCallingUid;
-        }
-    }
 
     private static final class Holder {
         private static final HiddenAppsManagerService INSTANCE = new HiddenAppsManagerService();
@@ -108,16 +86,6 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
     }
 
     @Override
-    public boolean isAppHidden(String packageName) {
-        return mController != null && mController.isAppHidden(packageName);
-    }
-
-    @Override
-    public boolean isAppCompletelyHidden(String packageName) {
-        return mController != null && mController.isAppCompletelyHidden(packageName);
-    }
-
-    @Override
     public boolean shouldHideFromLauncher(String packageName) {
         return mController != null && mController.shouldHideFromLauncher(packageName);
     }
@@ -125,23 +93,13 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
     @Override
     public void setHiddenMode(String packageName, int mode) {
         enforceManageHiddenApps();
-        if (DEBUG) {
-            Slog.i(TAG, "setHiddenMode pkg=" + packageName + " mode=" + modeName(mode)
-                    + " caller=" + callerLabel(Binder.getCallingUid()));
-        }
         mController.setHiddenMode(packageName, mode);
-        notifyHiddenAppsChanged();
     }
 
     @Override
     public void setAllowNotificationsFromHiddenApps(boolean allow) {
         enforceManageHiddenApps();
-        if (DEBUG) {
-            Slog.i(TAG, "setAllowNotificationsFromHiddenApps allow=" + allow
-                    + " caller=" + callerLabel(Binder.getCallingUid()));
-        }
         mController.setAllowNotificationsFromHiddenApps(allow);
-        notifyHiddenAppsChanged();
     }
 
     @Override
@@ -160,8 +118,8 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
     }
 
     @Override
-    public List<HiddenAppInfo> getHiddenAppsForDrawer(String callingPackage) {
-        enforceDrawerCaller(callingPackage);
+    public List<HiddenAppInfo> getHiddenAppsForDrawer() {
+        enforceLauncherCaller();
         if (mController == null) {
             return List.of();
         }
@@ -170,7 +128,7 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
         final long token = Binder.clearCallingIdentity();
         try {
             for (String pkg : mController.getHiddenPackages()) {
-                if (TextUtils.isEmpty(pkg) || !mController.isAppHidden(pkg)) {
+                if (TextUtils.isEmpty(pkg)) {
                     continue;
                 }
                 String label = pkg;
@@ -188,17 +146,9 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
                     Slog.w(TAG, "hidden drawer pkg not found: " + pkg);
                 }
                 entries.add(new HiddenAppInfo(pkg, label, launchComponent, icon));
-                if (DEBUG) {
-                    Slog.i(TAG, "drawer entry pkg=" + pkg + " label=" + label
-                            + " launch=" + launchComponent);
-                }
             }
         } finally {
             Binder.restoreCallingIdentity(token);
-        }
-        if (DEBUG) {
-            Slog.i(TAG, "getHiddenAppsForDrawer caller=" + callingPackage
-                    + " count=" + entries.size());
         }
         return entries;
     }
@@ -217,25 +167,6 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
                 }
             }
         }
-        if (DEBUG) {
-            Slog.i(TAG, "authenticatedHiddenDrawerActive=" + active
-                    + " pkgs=" + mAuthenticatedDrawerCompleteHidePackages
-                    + " caller=" + callerLabel(Binder.getCallingUid()));
-        }
-    }
-
-    @Override
-    public void registerHiddenAppsStateListener(IHiddenAppsStateListener listener) {
-        if (listener != null) {
-            mListeners.register(listener);
-        }
-    }
-
-    @Override
-    public void unregisterHiddenAppsStateListener(IHiddenAppsStateListener listener) {
-        if (listener != null) {
-            mListeners.unregister(listener);
-        }
     }
 
     // --- System-server hooks (PackageManager, LauncherApps, notifications) ---
@@ -249,14 +180,7 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
         if (!mController.shouldHideFromLauncher(targetPackage)) {
             return false;
         }
-        final boolean bypass = canBypassHiddenFilter(callingUid);
-        final boolean filter = !bypass;
-        if (DEBUG && filter) {
-            Slog.i(TAG, "filter launcher pkg=" + targetPackage + " mode="
-                    + modeName(mController.getHiddenMode(targetPackage))
-                    + " caller=" + callerLabel(callingUid));
-        }
-        return filter;
+        return !canBypassHiddenFilter(callingUid);
     }
 
     /**
@@ -268,27 +192,15 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
         if (!mController.isAppCompletelyHidden(targetPackage)) {
             return false;
         }
-        if (canAccessCompletelyHiddenPackage(targetPackage, callingUid)) {
+        if (canAccessCompletelyHiddenPackage(targetPackage)) {
             return false;
         }
-        final boolean bypass = canBypassHiddenFilter(callingUid);
-        final boolean filter = !bypass;
-        if (filter) {
-            if (mAuthenticatedHiddenDrawerActive) {
-                Slog.w(TAG, "filter pm pkg=" + targetPackage + " mode=complete caller="
-                        + callerLabel(callingUid) + " sessionPkgs="
-                        + mAuthenticatedDrawerCompleteHidePackages);
-            } else if (DEBUG) {
-                Slog.i(TAG, "filter pm pkg=" + targetPackage + " mode=complete caller="
-                        + callerLabel(callingUid));
-            }
-        }
-        return filter;
+        return !canBypassHiddenFilter(callingUid);
     }
 
     /**
-     * Records a successful hidden-drawer launch so the package stays accessible for the
-     * remainder of the authenticated session (permission UI, app self-queries, etc.).
+     * Records a launch from the authenticated hidden drawer so the package stays PM-visible
+     * for the rest of the session.
      */
     public void onHiddenDrawerAppLaunched(String packageName) {
         if (TextUtils.isEmpty(packageName) || mController == null) {
@@ -303,65 +215,10 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
     }
 
     /**
-     * Whether {@code callingUid} may access a {@link HiddenAppsManager#HIDE_COMPLETE} package
-     * during an authenticated hidden-drawer session.
+     * Whether {@code callingUid} may launch from the authenticated hidden-apps drawer.
      */
-    private boolean canAccessCompletelyHiddenPackage(String targetPackage, int callingUid) {
-        if (!mController.isAppCompletelyHidden(targetPackage)) {
-            return false;
-        }
-        if (!mAuthenticatedHiddenDrawerActive) {
-            return isHiddenDrawerLaunchAllowed(callingUid);
-        }
-        synchronized (mAuthenticatedDrawerCompleteHidePackages) {
-            if (mAuthenticatedDrawerCompleteHidePackages.contains(targetPackage)) {
-                // While the drawer session is active, allow all PM access to these packages
-                // (launcher, PermissionController, the running app, etc.).
-                return true;
-            }
-        }
-        return isHiddenDrawerLaunchAllowed(callingUid);
-    }
-
-    /**
-     * Whether {@code callingUid} may resolve or launch {@link HiddenAppsManager#HIDE_COMPLETE}
-     * packages from the authenticated hidden-apps drawer.
-     */
-    public boolean isHiddenDrawerLaunchAllowed(@Nullable Intent intent, int callingUid) {
-        if (!isLauncherCaller(callingUid)) {
-            return false;
-        }
-        if (mAuthenticatedHiddenDrawerActive) {
-            return true;
-        }
-        if (intent != null && intent.getBooleanExtra(
-                HiddenAppsManager.EXTRA_ALLOW_HIDDEN_LAUNCH, false)) {
-            return true;
-        }
-        HiddenLaunchContext ctx = mHiddenLaunchContext.get();
-        return ctx != null && ctx.intent != null && ctx.intent.getBooleanExtra(
-                HiddenAppsManager.EXTRA_ALLOW_HIDDEN_LAUNCH, false);
-    }
-
-    /** @see #isHiddenDrawerLaunchAllowed(Intent, int) */
     public boolean isHiddenDrawerLaunchAllowed(int callingUid) {
-        return isHiddenDrawerLaunchAllowed(null, callingUid);
-    }
-
-    /**
-     * Tracks the intent being resolved so PM filtering can honor hidden-drawer launches.
-     */
-    public void pushHiddenLaunchContext(Intent intent, int filterCallingUid) {
-        if (intent == null) {
-            mHiddenLaunchContext.remove();
-            return;
-        }
-        mHiddenLaunchContext.set(new HiddenLaunchContext(new Intent(intent), filterCallingUid));
-    }
-
-    /** Clears {@link #pushHiddenLaunchContext(Intent, int)} state for the current thread. */
-    public void popHiddenLaunchContext() {
-        mHiddenLaunchContext.remove();
+        return isLauncherCaller(callingUid) && mAuthenticatedHiddenDrawerActive;
     }
 
     /**
@@ -371,16 +228,24 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
         if (mController == null || !mController.isAppCompletelyHidden(packageName)) {
             return false;
         }
-        final boolean suppress = !mController.isAllowNotificationsFromHiddenApps();
-        if (DEBUG && suppress) {
-            Slog.i(TAG, "suppress notification pkg=" + packageName);
-        }
-        return suppress;
+        return !mController.isAllowNotificationsFromHiddenApps();
     }
 
     public void onPackageRemoved(String packageName) {
         if (mController != null) {
             mController.cleanupPackage(packageName);
+        }
+    }
+
+    private boolean canAccessCompletelyHiddenPackage(String targetPackage) {
+        if (!mAuthenticatedHiddenDrawerActive || mController == null) {
+            return false;
+        }
+        if (!mController.isAppCompletelyHidden(targetPackage)) {
+            return false;
+        }
+        synchronized (mAuthenticatedDrawerCompleteHidePackages) {
+            return mAuthenticatedDrawerCompleteHidePackages.contains(targetPackage);
         }
     }
 
@@ -403,19 +268,14 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
     private void enforceLauncherCaller() {
         if (!isLauncherCaller(Binder.getCallingUid())) {
             throw new SecurityException("Only " + LAUNCHER_PACKAGE
-                    + " may change hidden drawer session state");
+                    + " may access hidden drawer APIs");
         }
     }
 
     private boolean canBypassHiddenFilter(int callingUid) {
         // Only allow bypass for calls that originate from within system_server itself.
-        // Do not grant blanket bypass to all callers with system/shared UIDs (e.g. Settings app).
         final int callingPid = Binder.getCallingPid();
         if (callingPid == Process.myPid()) {
-            if (DEBUG) {
-                Slog.d(TAG, "bypass uid=" + callingUid + " pid=" + callingPid
-                        + " reason=system_server_internal");
-            }
             return true;
         }
         final String[] packages = mContext.getPackageManager().getPackagesForUid(callingUid);
@@ -424,9 +284,6 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
         }
         for (String pkg : packages) {
             if (SETTINGS_PACKAGE.equals(pkg)) {
-                if (DEBUG) {
-                    Slog.d(TAG, "bypass uid=" + callingUid + " pkg=" + pkg + " reason=settings");
-                }
                 return true;
             }
         }
@@ -449,64 +306,7 @@ public class HiddenAppsManagerService extends IHiddenAppsManager.Stub {
         throw new SecurityException("Only " + SETTINGS_PACKAGE + " may manage hidden apps");
     }
 
-    private void enforceDrawerCaller(String callingPackage) {
-        final int uid = Binder.getCallingUid();
-        if (UserHandle.getAppId(uid) < Process.FIRST_APPLICATION_UID) {
-            return;
-        }
-        final String[] packages = mContext.getPackageManager().getPackagesForUid(uid);
-        if (packages != null) {
-            for (String pkg : packages) {
-                if (LAUNCHER_PACKAGE.equals(pkg)) {
-                    if (DEBUG && !LAUNCHER_PACKAGE.equals(callingPackage)) {
-                        Slog.w(TAG, "drawer caller package mismatch reported="
-                                + callingPackage + " actual=" + pkg);
-                    }
-                    return;
-                }
-            }
-        }
-        Slog.e(TAG, "drawer caller DENIED uid=" + uid + " reportedPkg=" + callingPackage
-                + " uidPkgs=" + (packages != null ? String.join(",", packages) : "null"));
-        throw new SecurityException("Only " + LAUNCHER_PACKAGE + " may query hidden apps for drawer");
-    }
-
-    private void notifyHiddenAppsChanged() {
-        final int n = mListeners.beginBroadcast();
-        try {
-            for (int i = 0; i < n; i++) {
-                try {
-                    mListeners.getBroadcastItem(i).onHiddenAppsChanged();
-                } catch (RemoteException e) {
-                    // ignore dead listener
-                }
-            }
-        } finally {
-            mListeners.finishBroadcast();
-        }
-    }
-
-    private String callerLabel(int uid) {
-        if (mContext == null) {
-            return Integer.toString(uid);
-        }
-        final String[] pkgs = mContext.getPackageManager().getPackagesForUid(uid);
-        if (pkgs == null || pkgs.length == 0) {
-            return "uid:" + uid;
-        }
-        return pkgs[0] + "(" + uid + ")";
-    }
-
-    private static String modeName(int mode) {
-        return switch (mode) {
-            case HiddenAppsManager.HIDE_COMPLETE -> "complete";
-            case HiddenAppsManager.HIDE_LAUNCHER -> "launcher";
-            default -> "none";
-        };
-    }
-
-    @Nullable
-    private static Bitmap drawableToBitmap(@Nullable Drawable drawable) {
+    private static Bitmap drawableToBitmap(Drawable drawable) {
         if (drawable == null) {
             return null;
         }

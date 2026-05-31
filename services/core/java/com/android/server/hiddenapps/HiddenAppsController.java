@@ -117,12 +117,6 @@ public class HiddenAppsController {
                 }
             }
         }
-        Slog.i(TAG, "Loaded hidden packages: " + mHiddenModes.size());
-        synchronized (this) {
-            for (Map.Entry<String, Integer> entry : mHiddenModes.entrySet()) {
-                Slog.i(TAG, "  hidden pkg=" + entry.getKey() + " mode=" + entry.getValue());
-            }
-        }
     }
 
     public boolean isAllowNotificationsFromHiddenApps() {
@@ -144,10 +138,6 @@ public class HiddenAppsController {
         }
     }
 
-    public boolean isAppHidden(String packageName) {
-        return getHiddenMode(packageName) != HiddenAppsManager.HIDE_NONE;
-    }
-
     public boolean isAppCompletelyHidden(String packageName) {
         return getHiddenMode(packageName) == HiddenAppsManager.HIDE_COMPLETE;
     }
@@ -164,7 +154,6 @@ public class HiddenAppsController {
             Slog.w(TAG, "Cannot hide package - not hideable: " + packageName);
             return;
         }
-        Slog.i(TAG, "setHiddenMode pkg=" + packageName + " mode=" + mode);
         synchronized (this) {
             if (mode == HiddenAppsManager.HIDE_NONE) {
                 if (mHiddenModes.remove(packageName) != null) {

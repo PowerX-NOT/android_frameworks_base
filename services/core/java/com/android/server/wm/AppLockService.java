@@ -44,6 +44,7 @@ import com.android.internal.app.IAppLockManager;
 import com.android.internal.app.IAppLockStateListener;
 import com.android.internal.app.IAppSessionListener;
 import com.android.server.applock.AppLockController;
+import com.android.server.hiddenapps.HiddenAppsManagerService;
 import com.android.server.policy.PermissionPolicyInternal;
 
 import java.util.ArrayList;
@@ -179,6 +180,7 @@ public class AppLockService extends IAppLockManager.Stub implements IAppLockServ
             if (TextUtils.isEmpty(packageName)) return;
             if (intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) return;
             cleanupPackage(packageName);
+            HiddenAppsManagerService.get().onPackageRemoved(packageName);
         }
     };
 

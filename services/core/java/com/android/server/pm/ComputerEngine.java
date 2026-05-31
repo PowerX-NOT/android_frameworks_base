@@ -579,7 +579,7 @@ public class ComputerEngine implements Computer {
                                 && !isCallerSameApp(pkgName, filterCallingUid);
                 final boolean allowHiddenDrawerLaunch =
                         com.android.server.hiddenapps.HiddenAppsManagerService.get()
-                                .isHiddenDrawerLaunchAllowed(intent, filterCallingUid);
+                                .isHiddenDrawerLaunchAllowed(filterCallingUid);
                 final boolean blockNormalResolution =
                         !allowHiddenDrawerLaunch
                                 && (!resolveForStart || resolveForStartNonExported)
